@@ -2,6 +2,8 @@ import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "ex
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
+import { useNavigation } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -63,6 +65,33 @@ type RecentScan = {
   scannedAt: string;
 };
 
+type TabRoutes = {
+  index: undefined;
+};
+
+const DEMO_SCAN_SIGNATURES = new Set(
+  [demoUpiPayload, suspiciousDemoUpiPayload, blockedDemoUpiPayload].map((payload) => {
+    const parsed = parseUpiQr(payload);
+    return JSON.stringify([
+      parsed.status,
+      parsed.payeeName || "Name not provided",
+      parsed.payeeAddress || "Not found",
+      displayAmount(parsed),
+      parsed.headline,
+    ]);
+  }),
+);
+
+function isDemoScan(scan: RecentScan) {
+  return DEMO_SCAN_SIGNATURES.has(JSON.stringify([
+    scan.status,
+    scan.payeeName,
+    scan.payeeAddress,
+    scan.amount,
+    scan.headline,
+  ]));
+}
+
 function triggerLightHaptic() {
   if (Platform.OS !== "web") {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -103,6 +132,7 @@ function DetailRow({ label, value, mono = false }: { label: string; value: strin
 }
 
 export default function HomeScreen() {
+  const navigation = useNavigation<BottomTabNavigationProp<TabRoutes>>();
   const [permission, requestPermission] = useCameraPermissions();
   const [isScanning, setIsScanning] = useState(false);
   const [result, setResult] = useState<UpiPayload | null>(null);
@@ -112,6 +142,16 @@ export default function HomeScreen() {
   const screenOpacity = useRef(new Animated.Value(1)).current;
   const screenY = useRef(new Animated.Value(0)).current;
   const canProceed = Boolean(result?.isUpi && result.payeeAddress && result.payeeName);
+
+  useEffect(
+    () =>
+      navigation.addListener("tabPress", () => {
+        setIsScanning(false);
+        setResult(null);
+        setReported(false);
+      }),
+    [navigation],
+  );
 
   useEffect(() => {
     screenOpacity.setValue(0);
@@ -126,7 +166,14 @@ export default function HomeScreen() {
     void AsyncStorage.getItem(HISTORY_KEY).then((value) => {
       if (!value) return;
       try {
-        setRecentScans(JSON.parse(value) as RecentScan[]);
+        const savedScans = JSON.parse(value) as RecentScan[];
+        const scansWithoutDemos = savedScans.filter((scan) => !isDemoScan(scan));
+        setRecentScans(scansWithoutDemos);
+        if (scansWithoutDemos.length !== savedScans.length) {
+          void AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(scansWithoutDemos)).catch((error) => {
+            console.error("Could not remove sample reviews from recent scan history.", error);
+          });
+        }
       } catch {
         setRecentScans([]);
       }
@@ -150,12 +197,12 @@ export default function HomeScreen() {
     await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(next));
   }
 
-  function showParsedResult(parsed: UpiPayload) {
+  function showParsedResult(parsed: UpiPayload, remember = true) {
     setIsScanning(false);
     setResult(parsed);
     setReported(false);
     triggerResultHaptic(parsed.status);
-    void rememberResult(parsed);
+    if (remember) void rememberResult(parsed);
   }
 
   async function startScanner() {
@@ -182,7 +229,7 @@ export default function HomeScreen() {
 
   function showDemoPayload(payload: string) {
     triggerLightHaptic();
-    showParsedResult(parseUpiQr(payload));
+    showParsedResult(parseUpiQr(payload), false);
   }
 
   function showDemo() {
