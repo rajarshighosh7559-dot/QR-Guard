@@ -34,7 +34,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Export static web app
-        run: pnpm exec expo export --platform web --output-dir dist
+        run: pnpm exec expo export --platform web --output-dir dist --max-workers 1
         env:
           GITHUB_PAGES: "true"
 
