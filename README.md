@@ -16,6 +16,7 @@
 - **Recent scan history** stored locally on the device.
 - **Sample scenarios** for a normal, suspicious, and blocked QR so you can explore the review flow without a real payment.
 - **Payment safety guidance**, including a reminder that a UPI PIN is used to send money, never to receive it.
+- **Installable web app** with a branded home-screen icon and offline app-shell caching.
 
 ## How the checks work
 
@@ -33,6 +34,10 @@ pnpm exec expo start --web
 ```
 
 Open the local URL printed by Expo. On a phone, run `pnpm exec expo start` and scan the Expo QR code with Expo Go. Camera access requires permission; web camera access generally requires HTTPS or localhost. Image upload decoding depends on browser `BarcodeDetector` support.
+
+## Install on a device
+
+Open the Vercel site over HTTPS in a supported browser. In Chrome or Edge, choose **Install QR Guard** from the address-bar install icon or browser menu. On iPhone or iPad, open the site in Safari, tap **Share**, then **Add to Home Screen**. The installed app caches its app shell after the first visit; scanning still depends on browser camera and QR-decoding support.
 
 ## Checks
 

@@ -54,6 +54,8 @@ The live camera scanner needs a secure browser context and camera permission. Th
 
 The web app is hosted on [Vercel](https://qr-guard-eta.vercel.app). Changes pushed to `main` trigger a new deployment.
 
+The HTTPS web app can be installed from Chrome or Edge using **Install QR Guard** in the browser menu, or from Safari on iPhone/iPad using **Share → Add to Home Screen**. The app shell is cached after the first visit for offline launching.
+
 ## Run on a phone
 
 ```bash
