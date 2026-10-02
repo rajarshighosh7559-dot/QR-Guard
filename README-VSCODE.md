@@ -50,18 +50,14 @@ pnpm exec expo start --web
 
 The live camera scanner needs a secure browser context and camera permission. The upload button works best in a modern Chrome or Edge browser with QR `BarcodeDetector` support.
 
-## Publish the web app for free
+## Online deployment
 
-The `Deploy to GitHub Pages` workflow builds the static Expo web app and deploys it to GitHub Pages whenever changes are pushed to `main`.
-
-1. In the GitHub repository, open **Settings → Pages** and set the build and deployment source to **GitHub Actions**.
-2. Push changes to `main`, or manually run the workflow from the **Actions** tab.
-3. Open the Pages URL shown in the workflow's deployment job.
+The web app is hosted on [Vercel](https://qr-guard-eta.vercel.app). Changes pushed to `main` trigger a new deployment.
 
 ## Run on a phone
 
 ```bash
-pnpm start
+pnpm exec expo start
 ```
 
 Then scan the Expo QR code with Expo Go, or use:

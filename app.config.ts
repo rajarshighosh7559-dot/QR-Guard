@@ -134,7 +134,6 @@ const config: ExpoConfig = {
     ],
   ],
   experiments: {
-    baseUrl: process.env.GITHUB_PAGES === "true" ? "/QR-Guard" : "",
     typedRoutes: true,
     reactCompiler: true,
   },
