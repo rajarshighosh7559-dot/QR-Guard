@@ -12,10 +12,10 @@ import {
   Linking,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
@@ -30,20 +30,20 @@ import {
 } from "@/lib/upi";
 
 const palette = {
-  ink: "#070B14",
-  inkSoft: "#AAB5CC",
-  paper: "#070B14",
-  card: "#111827",
-  line: "#26334A",
-  muted: "#7F8BA3",
-  blue: "#5B7CFF",
-  blueSoft: "#1A2450",
-  green: "#35D58A",
-  greenSoft: "#123A31",
-  amber: "#FFC857",
-  amberSoft: "#3A2C15",
-  red: "#FF5C72",
-  redSoft: "#421B2A",
+  ink: "#E7F5F0",
+  inkSoft: "#A5BCB5",
+  paper: "#071210",
+  card: "#0D1B19",
+  line: "#1B3934",
+  muted: "#8BA49C",
+  blue: "#42DDEB",
+  blueSoft: "#103236",
+  green: "#45F2A3",
+  greenSoft: "#10382D",
+  amber: "#FFD078",
+  amberSoft: "#3A301B",
+  red: "#FF7284",
+  redSoft: "#3D2028",
 };
 
 const riskMeta: Record<RiskStatus, { label: string; color: string; background: string; icon: string }> = {
@@ -133,6 +133,7 @@ function DetailRow({ label, value, mono = false }: { label: string; value: strin
 
 export default function HomeScreen() {
   const navigation = useNavigation<BottomTabNavigationProp<TabRoutes>>();
+  const isWideScreen = useWindowDimensions().width >= 720;
   const [permission, requestPermission] = useCameraPermissions();
   const [isScanning, setIsScanning] = useState(false);
   const [result, setResult] = useState<UpiPayload | null>(null);
@@ -141,6 +142,7 @@ export default function HomeScreen() {
   const [uploadedImageUri, setUploadedImageUri] = useState<string | null>(null);
   const screenOpacity = useRef(new Animated.Value(1)).current;
   const screenY = useRef(new Animated.Value(0)).current;
+  const radarProgress = useRef(new Animated.Value(0)).current;
   const canProceed = Boolean(result?.isUpi && result.payeeAddress && result.payeeName);
 
   useEffect(
@@ -161,6 +163,25 @@ export default function HomeScreen() {
       Animated.timing(screenY, { toValue: 0, duration: 260, useNativeDriver: true }),
     ]).start();
   }, [isScanning, result, screenOpacity, screenY]);
+
+  useEffect(() => {
+    const radarAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(radarProgress, {
+          toValue: 1,
+          duration: 2200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(radarProgress, {
+          toValue: 0,
+          duration: 1,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    radarAnimation.start();
+    return () => radarAnimation.stop();
+  }, [radarProgress]);
 
   useEffect(() => {
     void AsyncStorage.getItem(HISTORY_KEY).then((value) => {
@@ -308,7 +329,7 @@ export default function HomeScreen() {
 
   if (isScanning) {
     return (
-      <ScreenContainer edges={["top", "bottom", "left", "right"]} containerClassName="bg-ink" className="p-0">
+      <ScreenContainer edges={["top", "bottom", "left", "right"]} containerClassName="bg-background" className="p-0">
         <Animated.View style={[styles.scannerScreen, { opacity: screenOpacity, transform: [{ translateY: screenY }] }]}> 
           <CameraView
             style={StyleSheet.absoluteFill}
@@ -353,10 +374,16 @@ export default function HomeScreen() {
 
   return (
     <ScreenContainer className="p-0" containerClassName="bg-background">
+      <View pointerEvents="none" style={styles.backgroundPattern}>
+        <View style={styles.ambientOrb} />
+        <View style={[styles.circuitTrace, styles.circuitTraceOne]} />
+        <View style={[styles.circuitTrace, styles.circuitTraceTwo]} />
+      </View>
       <Animated.ScrollView style={{ opacity: screenOpacity, transform: [{ translateY: screenY }] }} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.headerRow}>
           <View style={styles.brandMark}>
             <View style={styles.brandMarkInner} />
+            <View style={styles.brandMarkCore} />
           </View>
           <View style={styles.brandCopy}>
             <Text style={styles.brandName}>QR GUARD</Text>
@@ -368,19 +395,46 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <View style={styles.heroSection}>
-          <Text style={styles.heroKicker}>YOUR PAYMENT, YOUR CHECK</Text>
-          <Text style={styles.heroTitle}>Know who gets paid.</Text>
-          <Text style={styles.heroBody}>
-            Read the recipient, amount, and risk signals before your UPI app opens.
-          </Text>
+        <View style={[styles.heroSection, isWideScreen && styles.heroSectionWide]}>
+          <View style={isWideScreen && styles.heroCopyWide}>
+            <Text style={styles.heroKicker}>A LITTLE CLARITY BEFORE YOU PAY</Text>
+            <Text style={styles.heroTitle}>Know who gets paid.</Text>
+            <Text style={styles.heroBody}>
+              Read the recipient, amount, and risk signals before your UPI app opens.
+            </Text>
+          </View>
+          <View
+            style={[styles.securityVisual, isWideScreen && styles.securityVisualWide]}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            <View style={styles.radarTrack} />
+            <Animated.View
+              style={[
+                styles.radarPulse,
+                {
+                  opacity: radarProgress.interpolate({ inputRange: [0, 0.7, 1], outputRange: [0.5, 0.18, 0] }),
+                  transform: [{ scale: radarProgress.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1.45] }) }],
+                },
+              ]}
+            />
+            <View style={styles.shieldAura}>
+              <View style={styles.heroShield}>
+                <Text style={styles.heroShieldCheck}>✓</Text>
+              </View>
+            </View>
+            <View style={styles.localCheckPill}>
+              <View style={styles.localCheckDot} />
+              <Text style={styles.localCheckText}>DEVICE-LOCAL CHECK</Text>
+            </View>
+          </View>
         </View>
 
         {!result ? (
           <View style={styles.scanCard}>
             <View style={styles.scanCardTop}>
               <View>
-                <Text style={styles.cardEyebrow}>READY WHEN YOU ARE</Text>
+                <Text style={[styles.cardEyebrow, styles.scanCardEyebrow]}>READY WHEN YOU ARE</Text>
                 <Text style={styles.scanCardTitle}>Scan a QR code</Text>
               </View>
               <View style={styles.shieldIcon}>
@@ -396,7 +450,7 @@ export default function HomeScreen() {
               onPress={startScanner}
               style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed]}
             >
-              <Text style={styles.primaryButtonText}>Open scanner</Text>
+              <Text style={styles.primaryButtonText}>Scan a QR code</Text>
               <Text style={styles.primaryButtonArrow}>→</Text>
             </Pressable>
             <Pressable
@@ -431,8 +485,8 @@ export default function HomeScreen() {
           </View>
         ) : (
           <View style={styles.resultCard}>
-            <View style={[styles.statusHero, { backgroundColor: riskMeta[result.status].background }]}> 
-              <View style={[styles.statusHeroIcon, { backgroundColor: riskMeta[result.status].color }]}> 
+            <View style={[styles.statusHero, { backgroundColor: riskMeta[result.status].background, borderColor: riskMeta[result.status].color }]}>
+              <View style={[styles.statusHeroIcon, { backgroundColor: riskMeta[result.status].color, borderColor: riskMeta[result.status].color }]}>
                 <Text style={styles.statusHeroIconText}>{riskMeta[result.status].icon}</Text>
               </View>
               <View style={styles.statusHeroCopy}>
@@ -575,7 +629,41 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  backgroundPattern: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: "hidden",
+  },
+  ambientOrb: {
+    position: "absolute",
+    top: -125,
+    right: -95,
+    width: 310,
+    height: 310,
+    borderRadius: 155,
+    borderWidth: 1,
+    borderColor: "rgba(66, 221, 235, 0.12)",
+    backgroundColor: "rgba(23, 118, 99, 0.08)",
+  },
+  circuitTrace: {
+    position: "absolute",
+    width: 200,
+    height: 1,
+    backgroundColor: "rgba(69, 242, 163, 0.12)",
+  },
+  circuitTraceOne: {
+    top: 176,
+    right: -74,
+    transform: [{ rotate: "-36deg" }],
+  },
+  circuitTraceTwo: {
+    top: 206,
+    right: -112,
+    transform: [{ rotate: "-36deg" }],
+  },
   scrollContent: {
+    width: "100%",
+    maxWidth: 760,
+    alignSelf: "center",
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 40,
@@ -586,26 +674,35 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   brandMark: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: palette.card,
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: "#0B2420",
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
   },
   brandMarkInner: {
-    width: 16,
-    height: 16,
-    borderRadius: 5,
-    borderWidth: 3,
-    borderColor: palette.blue,
+    width: 21,
+    height: 21,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: palette.green,
+    transform: [{ rotate: "45deg" }],
+  },
+  brandMarkCore: {
+    position: "absolute",
+    width: 6,
+    height: 6,
+    borderRadius: 2,
+    backgroundColor: palette.blue,
     transform: [{ rotate: "45deg" }],
   },
   brandCopy: {
     flex: 1,
   },
   brandName: {
-    color: "#F4F7FF",
+    color: palette.ink,
     fontSize: 12,
     fontWeight: "800",
     letterSpacing: 1.4,
@@ -622,7 +719,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 7,
     borderRadius: 99,
-    backgroundColor: "#111827",
+    backgroundColor: "#0D211E",
     borderWidth: 1,
     borderColor: palette.line,
   },
@@ -639,8 +736,16 @@ const styles = StyleSheet.create({
     letterSpacing: 0.7,
   },
   heroSection: {
-    paddingTop: 42,
-    paddingBottom: 20,
+    paddingTop: 34,
+    paddingBottom: 18,
+  },
+  heroSectionWide: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  heroCopyWide: {
+    flex: 1,
   },
   heroKicker: {
     color: palette.blue,
@@ -650,25 +755,119 @@ const styles = StyleSheet.create({
     marginBottom: 9,
   },
   heroTitle: {
-    color: "#F4F7FF",
-    fontSize: 36,
-    lineHeight: 42,
+    color: palette.ink,
+    fontFamily: Platform.OS === "web" ? "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" : "System",
+    fontSize: 37,
+    lineHeight: 43,
     fontWeight: "800",
-    letterSpacing: -1.4,
+    letterSpacing: -1.2,
   },
   heroBody: {
-    color: palette.muted,
+    color: palette.inkSoft,
     fontSize: 15,
     lineHeight: 22,
     marginTop: 13,
     maxWidth: 335,
   },
+  securityVisual: {
+    height: 148,
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  securityVisualWide: {
+    width: 190,
+    height: 190,
+    flexShrink: 0,
+    marginTop: 0,
+    marginBottom: 0,
+  },
+  radarTrack: {
+    position: "absolute",
+    width: 142,
+    height: 142,
+    borderRadius: 71,
+    borderWidth: 1,
+    borderColor: "rgba(66, 221, 235, 0.3)",
+    backgroundColor: "rgba(19, 91, 79, 0.08)",
+  },
+  radarPulse: {
+    position: "absolute",
+    width: 126,
+    height: 126,
+    borderRadius: 63,
+    borderWidth: 1,
+    borderColor: "rgba(69, 242, 163, 0.72)",
+    backgroundColor: "rgba(69, 242, 163, 0.08)",
+  },
+  shieldAura: {
+    width: 94,
+    height: 94,
+    borderRadius: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#0D2722",
+    borderWidth: 1,
+    borderColor: "#286452",
+    shadowColor: palette.green,
+    shadowOpacity: 0.38,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 8,
+  },
+  heroShield: {
+    width: 52,
+    height: 52,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#174638",
+    borderWidth: 1,
+    borderColor: palette.green,
+    transform: [{ rotate: "45deg" }],
+  },
+  heroShieldCheck: {
+    color: palette.green,
+    fontSize: 30,
+    lineHeight: 34,
+    fontWeight: "800",
+    transform: [{ rotate: "-45deg" }],
+  },
+  localCheckPill: {
+    position: "absolute",
+    bottom: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 99,
+    backgroundColor: "#0D211E",
+    borderWidth: 1,
+    borderColor: "#235147",
+  },
+  localCheckDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: palette.green,
+  },
+  localCheckText: {
+    color: "#B9DCD0",
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 1,
+  },
   scanCard: {
-    backgroundColor: palette.ink,
+    backgroundColor: "#0A1917",
     borderRadius: 26,
     padding: 20,
-    shadowColor: palette.ink,
-    shadowOpacity: 0.14,
+    borderWidth: 1,
+    borderColor: "#1D5145",
+    shadowColor: palette.green,
+    shadowOpacity: 0.16,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 10 },
     elevation: 5,
@@ -685,8 +884,11 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     marginBottom: 7,
   },
+  scanCardEyebrow: {
+    color: palette.blue,
+  },
   scanCardTitle: {
-    color: "#FFFFFF",
+    color: "#F1FBF7",
     fontSize: 26,
     lineHeight: 31,
     fontWeight: "700",
@@ -695,18 +897,20 @@ const styles = StyleSheet.create({
     width: 45,
     height: 45,
     borderRadius: 15,
-    backgroundColor: "#1D315D",
+    backgroundColor: "#123A32",
+    borderWidth: 1,
+    borderColor: "#28725C",
     alignItems: "center",
     justifyContent: "center",
   },
   shieldIconText: {
-    color: "#AFC2FF",
+    color: palette.green,
     fontSize: 28,
     lineHeight: 28,
     transform: [{ rotate: "180deg" }],
   },
   scanCardBody: {
-    color: "#B8C4DA",
+    color: "#B2C9C0",
     fontSize: 14,
     lineHeight: 21,
     marginTop: 15,
@@ -715,7 +919,12 @@ const styles = StyleSheet.create({
   primaryButton: {
     minHeight: 54,
     borderRadius: 15,
-    backgroundColor: palette.blue,
+    backgroundColor: palette.green,
+    shadowColor: palette.green,
+    shadowOpacity: 0.48,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 8,
     paddingHorizontal: 17,
     flexDirection: "row",
     alignItems: "center",
@@ -726,18 +935,18 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.98 }],
   },
   disabledButton: {
-    backgroundColor: "#D9DFEA",
+    backgroundColor: "#20312D",
   },
   disabledButtonText: {
-    color: "#7A8496",
+    color: "#839891",
   },
   primaryButtonText: {
-    color: "#FFFFFF",
+    color: palette.ink,
     fontSize: 15,
     fontWeight: "700",
   },
   primaryButtonArrow: {
-    color: "#FFFFFF",
+    color: palette.ink,
     fontSize: 24,
     lineHeight: 25,
   },
@@ -750,12 +959,12 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   demoButtonText: {
-    color: "#C5D2EA",
+    color: "#B8D4CA",
     fontSize: 13,
     fontWeight: "600",
   },
   demoButtonArrow: {
-    color: "#C5D2EA",
+    color: palette.blue,
     fontSize: 16,
   },
   uploadButton: {
@@ -772,7 +981,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   uploadButtonText: {
-    color: "#AFC1E6",
+    color: palette.blue,
     fontSize: 12,
     fontWeight: "700",
   },
@@ -798,7 +1007,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 6,
     borderRadius: 99,
-    backgroundColor: "#172136",
+    backgroundColor: "#102824",
+    borderWidth: 1,
+    borderColor: "#1B4940",
   },
   sampleDot: {
     width: 6,
@@ -806,7 +1017,7 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   sampleChipText: {
-    color: "#C5D2EA",
+    color: "#C6DCD4",
     fontSize: 10,
     fontWeight: "700",
   },
@@ -817,7 +1028,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.line,
     shadowColor: "#000000",
-    shadowOpacity: 0.07,
+    shadowOpacity: 0.35,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },
     elevation: 3,
@@ -828,6 +1039,12 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 14,
     marginBottom: 16,
+    borderWidth: 1,
+    shadowColor: palette.green,
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 3,
   },
   statusHeroIcon: {
     width: 42,
@@ -835,9 +1052,15 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 1,
+    shadowColor: palette.green,
+    shadowOpacity: 0.32,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
   },
   statusHeroIconText: {
-    color: "#070B14",
+    color: "#062016",
     fontSize: 22,
     fontWeight: "900",
   },
@@ -876,7 +1099,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
   },
   historyTitle: {
-    color: "#F4F7FF",
+    color: palette.ink,
     fontSize: 20,
     fontWeight: "800",
     marginTop: 3,
@@ -912,7 +1135,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   historyHeadline: {
-    color: "#F4F7FF",
+    color: palette.ink,
     fontSize: 12,
     fontWeight: "800",
   },
@@ -932,7 +1155,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   resultTitle: {
-    color: "#F4F7FF",
+    color: palette.ink,
     fontSize: 24,
     lineHeight: 29,
     fontWeight: "800",
@@ -954,7 +1177,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   riskIconText: {
-    color: "#FFFFFF",
+    color: "#06100F",
     fontSize: 10,
     fontWeight: "800",
   },
@@ -963,10 +1186,12 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   recipientBlock: {
-    backgroundColor: "#172136",
+    backgroundColor: "#10201E",
     borderRadius: 17,
     padding: 15,
     marginTop: 20,
+    borderWidth: 1,
+    borderColor: "#21433C",
   },
   recipientLabel: {
     color: palette.muted,
@@ -975,7 +1200,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
   },
   recipientName: {
-    color: "#F4F7FF",
+    color: palette.ink,
     fontSize: 18,
     fontWeight: "700",
     marginTop: 6,
@@ -1006,7 +1231,7 @@ const styles = StyleSheet.create({
     paddingTop: 2,
   },
   detailValue: {
-    color: "#DDE5F6",
+    color: palette.ink,
     flex: 1,
     textAlign: "right",
     fontSize: 13,
@@ -1021,10 +1246,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 9,
-    backgroundColor: "#172136",
+    backgroundColor: "#10201E",
     borderRadius: 14,
     padding: 12,
     marginTop: 15,
+    borderWidth: 1,
+    borderColor: "#1B4039",
   },
   explanationMark: {
     width: 19,
@@ -1047,12 +1274,12 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   handoffWarning: {
-    backgroundColor: "#302714",
+    backgroundColor: "#302917",
     borderRadius: 14,
     padding: 12,
     marginTop: 12,
     borderWidth: 1,
-    borderColor: "#6D5521",
+    borderColor: "#725B2B",
   },
   handoffWarningTitle: {
     color: palette.amber,
@@ -1061,7 +1288,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   handoffWarningText: {
-    color: "#F2D58A",
+    color: "#F0D89B",
     fontSize: 12,
     lineHeight: 18,
     marginTop: 4,
@@ -1099,12 +1326,12 @@ const styles = StyleSheet.create({
     borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#172136",
+    backgroundColor: "#10201E",
     borderWidth: 1,
     borderColor: palette.line,
   },
   secondaryButtonText: {
-    color: "#E8EEFF",
+    color: palette.ink,
     fontSize: 12,
     fontWeight: "700",
   },
@@ -1157,11 +1384,11 @@ const styles = StyleSheet.create({
   },
   scannerScreen: {
     flex: 1,
-    backgroundColor: palette.ink,
+    backgroundColor: palette.paper,
   },
   scannerOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(4, 8, 18, 0.52)",
+    backgroundColor: "rgba(4, 16, 14, 0.62)",
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 30,
@@ -1178,7 +1405,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(11, 18, 32, 0.72)",
+    backgroundColor: "rgba(5, 24, 20, 0.82)",
+    borderWidth: 1,
+    borderColor: "rgba(69, 242, 163, 0.45)",
   },
   closeButtonText: {
     color: "#FFFFFF",
@@ -1190,7 +1419,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   scannerEyebrow: {
-    color: "#B8C8FF",
+    color: palette.blue,
     fontSize: 10,
     fontWeight: "800",
     letterSpacing: 1.6,
@@ -1211,15 +1440,15 @@ const styles = StyleSheet.create({
     aspectRatio: 1,
     borderRadius: 28,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.25)",
-    backgroundColor: "rgba(7, 11, 20, 0.18)",
+    borderColor: "rgba(66, 221, 235, 0.5)",
+    backgroundColor: "rgba(7, 25, 22, 0.18)",
     position: "relative",
   },
   corner: {
     position: "absolute",
     width: 38,
     height: 38,
-    borderColor: "#FFFFFF",
+    borderColor: palette.green,
   },
   cornerTopLeft: {
     top: 0,
@@ -1259,13 +1488,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 99,
-    backgroundColor: "rgba(11, 18, 32, 0.8)",
+    backgroundColor: "rgba(5, 24, 20, 0.88)",
+    borderWidth: 1,
+    borderColor: "rgba(69, 242, 163, 0.35)",
   },
   liveDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#73E5B2",
+    backgroundColor: palette.green,
   },
   scanHintText: {
     color: "#FFFFFF",
@@ -1273,7 +1504,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   scanHintSecondary: {
-    color: "#D4DBED",
+    color: "#D0E4DC",
     fontSize: 12,
     marginTop: 10,
   },

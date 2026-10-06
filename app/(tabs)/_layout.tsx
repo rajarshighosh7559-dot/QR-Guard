@@ -25,7 +25,13 @@ export default function TabLayout() {
           backgroundColor: colors.background,
           borderTopColor: colors.border,
           borderTopWidth: 0.5,
+          shadowColor: colors.tint,
+          shadowOpacity: 0.16,
+          shadowRadius: 14,
+          shadowOffset: { width: 0, height: -4 },
+          elevation: 10,
         },
+        tabBarLabelStyle: { fontWeight: "700", letterSpacing: 0.2 },
       }}
     >
       <Tabs.Screen
