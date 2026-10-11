@@ -1,58 +1,47 @@
-import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
+import {
+  CameraView,
+  useCameraPermissions,
+  type BarcodeScanningResult,
+} from "expo-camera";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { useNavigation } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Animated, Image, Linking, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import {
+  Alert,
+  Animated,
+  Image,
+  Linking,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
-import { type ColorScheme } from "@/constants/theme";
+import { getAppPalette } from "@/constants/app-palette";
 import { ScreenContainer } from "@/components/screen-container";
+import { IconSymbol } from "@/components/ui/icon-symbol";
+import { PageHeader } from "@/components/page-header";
+import { RiskStatusCard } from "@/components/risk-status-card";
 import { useThemeContext } from "@/lib/theme-provider";
-import { demoUpiPayload, blockedDemoUpiPayload, displayAmount, parseUpiQr, suspiciousDemoUpiPayload, type RiskStatus, type UpiPayload } from "@/lib/upi";
+import {
+  demoUpiPayload,
+  blockedDemoUpiPayload,
+  displayAmount,
+  parseUpiQr,
+  suspiciousDemoUpiPayload,
+  type RiskStatus,
+  type UpiPayload,
+} from "@/lib/upi";
 
-function getPalette(scheme: ColorScheme) {
-  if (scheme === "light") {
-    return {
-      ink: "#12302A",
-      inkSoft: "#3D5A52",
-      buttonText: "#FFFFFF",
-      paper: "#F4F8F6",
-      card: "#FFFFFF",
-      line: "#D6E6E0",
-      muted: "#607A72",
-      blue: "#087D8C",
-      blueSoft: "#DDF4F5",
-      green: "#087A50",
-      greenSoft: "#DDF4E9",
-      amber: "#946000",
-      amberSoft: "#FFF0CC",
-      red: "#B4233A",
-      redSoft: "#FCE4E7",
-    };
-  }
-  return {
-    ink: "#E7F5F0",
-    inkSoft: "#A5BCB5",
-    buttonText: "#E7F5F0",
-    paper: "#071210",
-    card: "#0D1B19",
-    line: "#1B3934",
-    muted: "#8BA49C",
-    blue: "#42DDEB",
-    blueSoft: "#103236",
-    green: "#45F2A3",
-    greenSoft: "#10382D",
-    amber: "#FFD078",
-    amberSoft: "#3A301B",
-    red: "#FF7284",
-    redSoft: "#3D2028",
-  };
-}
-
-type Palette = ReturnType<typeof getPalette>;
-type RiskMeta = Record<RiskStatus, { label: string; color: string; background: string; icon: string }>;
+type Palette = ReturnType<typeof getAppPalette>;
+type RiskMeta = Record<
+  RiskStatus,
+  { label: string; color: string; background: string; icon: string }
+>;
 
 function getRiskMeta(palette: Palette): RiskMeta {
   return {
@@ -97,17 +86,53 @@ type RecentScan = {
 
 type TabRoutes = {
   index: undefined;
+  scan: undefined;
+  history: undefined;
+  learn: undefined;
 };
 
 const DEMO_SCAN_SIGNATURES = new Set(
-  [demoUpiPayload, suspiciousDemoUpiPayload, blockedDemoUpiPayload].map((payload) => {
-    const parsed = parseUpiQr(payload);
-    return JSON.stringify([parsed.status, parsed.payeeName || "Name not provided", parsed.payeeAddress || "Not found", displayAmount(parsed), parsed.headline]);
-  }),
+  [demoUpiPayload, suspiciousDemoUpiPayload, blockedDemoUpiPayload].map(
+    (payload) => {
+      const parsed = parseUpiQr(payload);
+      return JSON.stringify([
+        parsed.status,
+        parsed.payeeName || "Name not provided",
+        parsed.payeeAddress || "Not found",
+        displayAmount(parsed),
+        parsed.headline,
+      ]);
+    },
+  ),
 );
 
 function isDemoScan(scan: RecentScan) {
-  return DEMO_SCAN_SIGNATURES.has(JSON.stringify([scan.status, scan.payeeName, scan.payeeAddress, scan.amount, scan.headline]));
+  return DEMO_SCAN_SIGNATURES.has(
+    JSON.stringify([
+      scan.status,
+      scan.payeeName,
+      scan.payeeAddress,
+      scan.amount,
+      scan.headline,
+    ]),
+  );
+}
+
+function isRecentScan(value: unknown): value is RecentScan {
+  if (!value || typeof value !== "object") return false;
+  const scan = value as Record<string, unknown>;
+  return (
+    typeof scan.id === "string" &&
+    (scan.status === "valid" ||
+      scan.status === "unverified" ||
+      scan.status === "suspicious" ||
+      scan.status === "blocked") &&
+    typeof scan.payeeName === "string" &&
+    typeof scan.payeeAddress === "string" &&
+    typeof scan.amount === "string" &&
+    typeof scan.headline === "string" &&
+    typeof scan.scannedAt === "string"
+  );
 }
 
 function triggerLightHaptic() {
@@ -118,48 +143,74 @@ function triggerLightHaptic() {
 
 function triggerResultHaptic(status: RiskStatus) {
   if (Platform.OS !== "web") {
-    void Haptics.notificationAsync(status === "blocked" || status === "suspicious" ? Haptics.NotificationFeedbackType.Warning : Haptics.NotificationFeedbackType.Success);
+    void Haptics.notificationAsync(
+      status === "blocked" || status === "suspicious"
+        ? Haptics.NotificationFeedbackType.Warning
+        : Haptics.NotificationFeedbackType.Success,
+    );
   }
 }
 
-function RiskBadge({ status, styles, riskMeta }: { status: RiskStatus; styles: HomeStyles; riskMeta: RiskMeta }) {
+function RiskBadge({
+  status,
+  styles,
+  riskMeta,
+}: {
+  status: RiskStatus;
+  styles: HomeStyles;
+  riskMeta: RiskMeta;
+}) {
   const meta = riskMeta[status];
   return (
     <View style={[styles.riskBadge, { backgroundColor: meta.background }]}>
       <View style={[styles.riskIcon, { backgroundColor: meta.color }]}>
         <Text style={styles.riskIconText}>{meta.icon}</Text>
       </View>
-      <Text style={[styles.riskBadgeText, { color: meta.color }]}>{meta.label}</Text>
+      <Text style={[styles.riskBadgeText, { color: meta.color }]}>
+        {meta.label}
+      </Text>
     </View>
   );
 }
 
-function DetailRow({ label, value, mono = false, styles }: { label: string; value: string; mono?: boolean; styles: HomeStyles }) {
+function DetailRow({
+  label,
+  value,
+  mono = false,
+  styles,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  styles: HomeStyles;
+}) {
   return (
     <View style={styles.detailRow}>
       <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={[styles.detailValue, mono && styles.monoValue]}>{value}</Text>
+      <Text style={[styles.detailValue, mono && styles.monoValue]}>
+        {value}
+      </Text>
     </View>
   );
 }
 
 export default function HomeScreen() {
-  const { colorScheme, setColorScheme } = useThemeContext();
-  const palette = useMemo(() => getPalette(colorScheme), [colorScheme]);
+  const { colorScheme } = useThemeContext();
+  const palette = useMemo(() => getAppPalette(colorScheme), [colorScheme]);
   const styles = useMemo(() => createStyles(palette), [palette]);
   const riskMeta = useMemo(() => getRiskMeta(palette), [palette]);
   const navigation = useNavigation<BottomTabNavigationProp<TabRoutes>>();
-  const isWideScreen = useWindowDimensions().width >= 720;
   const [permission, requestPermission] = useCameraPermissions();
   const [isScanning, setIsScanning] = useState(false);
   const [result, setResult] = useState<UpiPayload | null>(null);
   const [reported, setReported] = useState(false);
-  const [recentScans, setRecentScans] = useState<RecentScan[]>([]);
   const [uploadedImageUri, setUploadedImageUri] = useState<string | null>(null);
   const screenOpacity = useRef(new Animated.Value(1)).current;
   const screenY = useRef(new Animated.Value(0)).current;
   const radarProgress = useRef(new Animated.Value(0)).current;
-  const canProceed = Boolean(result?.isUpi && result.payeeAddress && result.payeeName);
+  const canProceed = Boolean(
+    result?.isUpi && result.payeeAddress && result.payeeName,
+  );
 
   useEffect(
     () =>
@@ -207,25 +258,24 @@ export default function HomeScreen() {
     return () => radarAnimation.stop();
   }, [radarProgress]);
 
-  useEffect(() => {
-    void AsyncStorage.getItem(HISTORY_KEY).then((value) => {
-      if (!value) return;
-      try {
-        const savedScans = JSON.parse(value) as RecentScan[];
-        const scansWithoutDemos = savedScans.filter((scan) => !isDemoScan(scan));
-        setRecentScans(scansWithoutDemos);
-        if (scansWithoutDemos.length !== savedScans.length) {
-          void AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(scansWithoutDemos)).catch((error) => {
-            console.error("Could not remove sample reviews from recent scan history.", error);
-          });
-        }
-      } catch {
-        setRecentScans([]);
-      }
-    });
-  }, []);
-
   async function rememberResult(parsed: UpiPayload) {
+    const storedHistory = await AsyncStorage.getItem(HISTORY_KEY);
+    let recentScans: RecentScan[] = [];
+    if (storedHistory) {
+      try {
+        const savedScans: unknown = JSON.parse(storedHistory);
+        if (Array.isArray(savedScans)) {
+          recentScans = savedScans
+            .filter(isRecentScan)
+            .filter((scan) => !isDemoScan(scan));
+        }
+      } catch (error) {
+        console.error(
+          "Could not read recent QR scan history before saving.",
+          error,
+        );
+      }
+    }
     const next: RecentScan[] = [
       {
         id: `${Date.now()}-${parsed.status}`,
@@ -238,7 +288,6 @@ export default function HomeScreen() {
       },
       ...recentScans,
     ].slice(0, 5);
-    setRecentScans(next);
     await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(next));
   }
 
@@ -247,7 +296,11 @@ export default function HomeScreen() {
     setResult(parsed);
     setReported(false);
     triggerResultHaptic(parsed.status);
-    if (remember) void rememberResult(parsed);
+    if (remember) {
+      void rememberResult(parsed).catch((error) => {
+        console.error("Could not save the recent QR scan.", error);
+      });
+    }
   }
 
   async function startScanner() {
@@ -255,7 +308,10 @@ export default function HomeScreen() {
     if (!permission?.granted) {
       const response = await requestPermission();
       if (!response.granted) {
-        Alert.alert("Camera permission needed", "QR Guard uses your camera only to read the QR code. It never reads your UPI PIN or bank credentials.");
+        Alert.alert(
+          "Camera permission needed",
+          "QR Guard uses your camera only to read the QR code. It never reads your UPI PIN or bank credentials.",
+        );
         return;
       }
     }
@@ -267,15 +323,6 @@ export default function HomeScreen() {
   function handleBarcodeScanned({ data }: BarcodeScanningResult) {
     if (!isScanning) return;
     showParsedResult(parseUpiQr(data));
-  }
-
-  function showDemoPayload(payload: string) {
-    triggerLightHaptic();
-    showParsedResult(parseUpiQr(payload), false);
-  }
-
-  function showDemo() {
-    showDemoPayload(demoUpiPayload);
   }
 
   async function uploadQrImage() {
@@ -290,18 +337,24 @@ export default function HomeScreen() {
     if (!uri) return;
     setUploadedImageUri(uri);
     if (Platform.OS !== "web") {
-      Alert.alert("Image selected", "This device selected the QR image. Use the camera scanner to decode it, or try the image again in a modern browser.");
+      Alert.alert(
+        "Image selected",
+        "This device selected the QR image. Use the camera scanner to decode it, or try the image again in a modern browser.",
+      );
       return;
     }
     const Detector = (
       globalThis as typeof globalThis & {
         BarcodeDetector?: new (options?: { formats: string[] }) => {
-          detect: (source: ImageBitmap) => Promise<Array<{ rawValue?: string }>>;
+          detect: (source: ImageBitmap) => Promise<{ rawValue?: string }[]>;
         };
       }
     ).BarcodeDetector;
     if (!Detector || typeof createImageBitmap !== "function") {
-      Alert.alert("Image decoder unavailable", "Your browser cannot decode QR images yet. Try Open scanner or use a modern Chrome or Edge browser.");
+      Alert.alert(
+        "Image decoder unavailable",
+        "Your browser cannot decode QR images yet. Try Open scanner or use a modern Chrome or Edge browser.",
+      );
       return;
     }
     try {
@@ -311,12 +364,18 @@ export default function HomeScreen() {
       bitmap.close();
       const rawValue = codes[0]?.rawValue;
       if (!rawValue) {
-        Alert.alert("No QR code found", "Choose a clear image where the QR code is fully visible.");
+        Alert.alert(
+          "No QR code found",
+          "Choose a clear image where the QR code is fully visible.",
+        );
         return;
       }
       showParsedResult(parseUpiQr(rawValue));
     } catch {
-      Alert.alert("Could not read image", "Choose a clearer QR image or use the live scanner instead.");
+      Alert.alert(
+        "Could not read image",
+        "Choose a clearer QR image or use the live scanner instead.",
+      );
     }
   }
 
@@ -328,34 +387,68 @@ export default function HomeScreen() {
 
   async function openInUpiApp() {
     if (!result?.isUpi || !result.payeeAddress || !result.payeeName) {
-      Alert.alert("Recipient details required", "QR Guard will not open a UPI app until the full recipient VPA and payee name are visible. Confirm the recipient through another trusted channel.");
+      Alert.alert(
+        "Recipient details required",
+        "QR Guard will not open a UPI app until the full recipient VPA and payee name are visible. Confirm the recipient through another trusted channel.",
+      );
       return;
     }
     triggerLightHaptic();
     try {
       const supported = await Linking.canOpenURL(result.raw);
       if (!supported && Platform.OS === "web") {
-        Alert.alert("Ready for handoff", "On your phone, this QR would now open the UPI app you choose. The payment itself stays inside that app.");
+        Alert.alert(
+          "Ready for handoff",
+          "On your phone, this QR would now open the UPI app you choose. The payment itself stays inside that app.",
+        );
         return;
       }
       if (!supported) {
-        Alert.alert("No UPI app found", "Install a supported UPI app, then try again.");
+        Alert.alert(
+          "No UPI app found",
+          "Install a supported UPI app, then try again.",
+        );
         return;
       }
       await Linking.openURL(result.raw);
     } catch {
-      Alert.alert("Could not open UPI app", "Review the recipient and amount, then open your preferred UPI app manually.");
+      Alert.alert(
+        "Could not open UPI app",
+        "Review the recipient and amount, then open your preferred UPI app manually.",
+      );
     }
   }
 
   if (isScanning) {
     return (
-      <ScreenContainer edges={["top", "bottom", "left", "right"]} containerClassName="bg-background" className="p-0">
-        <Animated.View style={[styles.scannerScreen, { opacity: screenOpacity, transform: [{ translateY: screenY }] }]}>
-          <CameraView style={StyleSheet.absoluteFill} facing="back" barcodeScannerSettings={{ barcodeTypes: ["qr"] }} onBarcodeScanned={handleBarcodeScanned} />
+      <ScreenContainer
+        edges={["top", "bottom", "left", "right"]}
+        containerClassName="bg-background"
+        className="p-0"
+      >
+        <Animated.View
+          style={[
+            styles.scannerScreen,
+            { opacity: screenOpacity, transform: [{ translateY: screenY }] },
+          ]}
+        >
+          <CameraView
+            style={StyleSheet.absoluteFill}
+            facing="back"
+            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+            onBarcodeScanned={handleBarcodeScanned}
+          />
           <View style={styles.scannerOverlay}>
             <View style={styles.scannerTopBar}>
-              <Pressable accessibilityRole="button" accessibilityLabel="Close scanner" onPress={() => setIsScanning(false)} style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close scanner"
+                onPress={() => setIsScanning(false)}
+                style={({ pressed }) => [
+                  styles.closeButton,
+                  pressed && styles.pressed,
+                ]}
+              >
                 <Text style={styles.closeButtonText}>×</Text>
               </Pressable>
               <View style={styles.scannerTopCopy}>
@@ -375,7 +468,9 @@ export default function HomeScreen() {
                 <View style={styles.liveDot} />
                 <Text style={styles.scanHintText}>Point at a UPI QR code</Text>
               </View>
-              <Text style={styles.scanHintSecondary}>We decode it locally before showing the payment app.</Text>
+              <Text style={styles.scanHintSecondary}>
+                We decode it locally before showing the payment app.
+              </Text>
             </View>
           </View>
         </Animated.View>
@@ -385,156 +480,177 @@ export default function HomeScreen() {
 
   return (
     <ScreenContainer className="p-0" containerClassName="bg-background">
-      <View pointerEvents="none" style={styles.backgroundPattern}>
-        <View style={styles.ambientOrb} />
-        <View style={[styles.circuitTrace, styles.circuitTraceOne]} />
-        <View style={[styles.circuitTrace, styles.circuitTraceTwo]} />
-      </View>
-      <Animated.ScrollView style={{ opacity: screenOpacity, transform: [{ translateY: screenY }] }} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.headerRow}>
-          <View style={styles.brandMark}>
-            <View style={styles.brandMarkInner} />
-            <View style={styles.brandMarkCore} />
-          </View>
-          <View style={styles.brandCopy}>
-            <Text style={styles.brandName}>QR GUARD</Text>
-            <Text style={styles.brandCaption}>scan before you pay</Text>
-          </View>
-          <Pressable accessibilityRole="button" accessibilityLabel={`Switch to ${colorScheme === "dark" ? "light" : "dark"} mode`} onPress={() => setColorScheme(colorScheme === "dark" ? "light" : "dark")} style={({ pressed }) => [styles.themeToggle, { backgroundColor: palette.card, borderColor: palette.line }, pressed && styles.pressed]}>
-            <Text style={[styles.themeToggleText, { color: palette.blue }]}>{colorScheme === "dark" ? "☀" : "☾"}</Text>
-          </Pressable>
-          <View style={styles.privacyPill}>
-            <View style={styles.privacyDot} />
-            <Text style={styles.privacyText}>PRIVATE BY DEFAULT</Text>
-          </View>
-        </View>
-
-        <View style={[styles.heroSection, isWideScreen && styles.heroSectionWide]}>
-          <View style={isWideScreen && styles.heroCopyWide}>
-            <Text style={styles.heroKicker}>A LITTLE CLARITY BEFORE YOU PAY</Text>
-            <Text style={styles.heroTitle}>Know who gets paid.</Text>
-            <Text style={styles.heroBody}>Read the recipient, amount, and risk signals before your UPI app opens.</Text>
-          </View>
-          <View style={[styles.securityVisual, isWideScreen && styles.securityVisualWide]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-            <View style={styles.radarTrack} />
-            <Animated.View
-              style={[
-                styles.radarPulse,
-                {
-                  opacity: radarProgress.interpolate({
-                    inputRange: [0, 0.7, 1],
-                    outputRange: [0.5, 0.18, 0],
-                  }),
-                  transform: [
-                    {
-                      scale: radarProgress.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0.55, 1.45],
-                      }),
-                    },
-                  ],
-                },
-              ]}
-            />
-            <View style={styles.shieldAura}>
-              <View style={styles.heroShield}>
-                <Text style={styles.heroShieldCheck}>✓</Text>
-              </View>
-            </View>
-            <View style={styles.localCheckPill}>
-              <View style={styles.localCheckDot} />
-              <Text style={styles.localCheckText}>DEVICE-LOCAL CHECK</Text>
-            </View>
-          </View>
-        </View>
+      <Animated.ScrollView
+        style={{ opacity: screenOpacity, transform: [{ translateY: screenY }] }}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <PageHeader />
 
         {!result ? (
-          <View style={styles.scanCard}>
-            <View style={styles.scanCardTop}>
-              <View>
-                <Text style={[styles.cardEyebrow, styles.scanCardEyebrow]}>READY WHEN YOU ARE</Text>
-                <Text style={styles.scanCardTitle}>Scan a QR code</Text>
+          <View style={styles.homeScanContent}>
+            <Text style={styles.homeEyebrow}>UPI INTENT SCANNER</Text>
+            <View
+              style={[
+                styles.homeScanFrame,
+                { borderColor: palette.line, backgroundColor: palette.card },
+              ]}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+            >
+              <View
+                style={[
+                  styles.homeScanCorner,
+                  styles.homeScanCornerTopLeft,
+                  { borderColor: palette.green },
+                ]}
+              />
+              <View
+                style={[
+                  styles.homeScanCorner,
+                  styles.homeScanCornerTopRight,
+                  { borderColor: palette.green },
+                ]}
+              />
+              <View
+                style={[
+                  styles.homeScanCorner,
+                  styles.homeScanCornerBottomLeft,
+                  { borderColor: palette.green },
+                ]}
+              />
+              <View
+                style={[
+                  styles.homeScanCorner,
+                  styles.homeScanCornerBottomRight,
+                  { borderColor: palette.green },
+                ]}
+              />
+              <View
+                style={[
+                  styles.homeQrMark,
+                  { backgroundColor: palette.greenSoft },
+                ]}
+              >
+                <IconSymbol
+                  name="qrcode.viewfinder"
+                  size={82}
+                  color={palette.green}
+                />
               </View>
-              <View style={styles.shieldIcon}>
-                <Text style={styles.shieldIconText}>⌁</Text>
-              </View>
+              <Animated.View
+                style={[
+                  styles.homeScanLine,
+                  {
+                    backgroundColor: palette.green,
+                    shadowColor: palette.green,
+                    transform: [
+                      {
+                        translateY: radarProgress.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [-122, 122],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              />
             </View>
-            <Text style={styles.scanCardBody}>We check the payment payload on this device first. No UPI PIN. No bank login. No payment until you choose to continue.</Text>
-            <Pressable accessibilityRole="button" accessibilityLabel="Open QR scanner" onPress={startScanner} style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed]}>
-              <Text style={styles.primaryButtonText}>Scan a QR code</Text>
+            <Text style={styles.homeScanTitle}>Scan before you pay</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Scan a payment QR"
+              onPress={startScanner}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                pressed && styles.primaryButtonPressed,
+              ]}
+            >
+              <Text style={styles.primaryButtonText}>Scan a payment QR</Text>
               <Text style={styles.primaryButtonArrow}>→</Text>
             </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="View a demo QR review" onPress={showDemo} style={({ pressed }) => [styles.demoButton, pressed && styles.pressed]}>
-              <Text style={styles.demoButtonText}>See a sample review</Text>
-              <Text style={styles.demoButtonArrow}>↗</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Upload QR image"
+              onPress={uploadQrImage}
+              style={({ pressed }) => [
+                styles.uploadButton,
+                pressed && styles.pressed,
+              ]}
+            >
+              <IconSymbol
+                name="qrcode.viewfinder"
+                size={19}
+                color={palette.blue}
+              />
+              <Text style={styles.uploadButtonText}>Upload QR image</Text>
             </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="Upload a QR image" onPress={uploadQrImage} style={({ pressed }) => [styles.uploadButton, pressed && styles.pressed]}>
-              <Text style={styles.uploadButtonIcon}>▧</Text>
-              <Text style={styles.uploadButtonText}>{uploadedImageUri ? "Choose another QR image" : "Upload a QR image"}</Text>
-            </Pressable>
-            {uploadedImageUri ? <Image source={{ uri: uploadedImageUri }} style={styles.uploadPreview} /> : null}
-            <View style={styles.sampleRow}>
-              <Pressable onPress={() => showDemoPayload(suspiciousDemoUpiPayload)} style={({ pressed }) => [styles.sampleChip, pressed && styles.pressed]}>
-                <View style={[styles.sampleDot, { backgroundColor: palette.red }]} />
-                <Text style={styles.sampleChipText}>Suspicious demo</Text>
-              </Pressable>
-              <Pressable onPress={() => showDemoPayload(blockedDemoUpiPayload)} style={({ pressed }) => [styles.sampleChip, pressed && styles.pressed]}>
-                <View style={[styles.sampleDot, { backgroundColor: palette.red }]} />
-                <Text style={styles.sampleChipText}>Blocked demo</Text>
-              </Pressable>
+            {uploadedImageUri ? (
+              <Image
+                source={{ uri: uploadedImageUri }}
+                style={styles.uploadPreview}
+              />
+            ) : null}
+            <View style={styles.trustRow}>
+              <Text style={styles.trustText}>No UPI PIN</Text>
+              <View style={styles.trustDot} />
+              <Text style={styles.trustText}>No bank login</Text>
+              <View style={styles.trustDot} />
+              <Text style={styles.trustText}>Review before paying</Text>
             </View>
           </View>
         ) : (
           <View style={styles.resultCard}>
-            <View
-              style={[
-                styles.statusHero,
-                {
-                  backgroundColor: riskMeta[result.status].background,
-                  borderColor: riskMeta[result.status].color,
-                },
-              ]}
-            >
-              <View
-                style={[
-                  styles.statusHeroIcon,
-                  {
-                    backgroundColor: riskMeta[result.status].color,
-                    borderColor: riskMeta[result.status].color,
-                  },
-                ]}
-              >
-                <Text style={styles.statusHeroIconText}>{riskMeta[result.status].icon}</Text>
-              </View>
-              <View style={styles.statusHeroCopy}>
-                <Text style={[styles.statusHeroLabel, { color: riskMeta[result.status].color }]}>QR SAFETY STATUS</Text>
-                <Text style={[styles.statusHeroTitle, { color: riskMeta[result.status].color }]}>{riskMeta[result.status].label}</Text>
-              </View>
-              <Text style={[styles.statusHeroArrow, { color: riskMeta[result.status].color }]}>↗</Text>
-            </View>
             <View style={styles.resultHeader}>
               <View>
-                <Text style={styles.cardEyebrow}>SCAN COMPLETE</Text>
+                <Text style={styles.cardEyebrow}>UPI INTENT REVIEW</Text>
                 <Text style={styles.resultTitle}>{result.headline}</Text>
               </View>
-              <RiskBadge status={result.status} styles={styles} riskMeta={riskMeta} />
+              <RiskBadge
+                status={result.status}
+                styles={styles}
+                riskMeta={riskMeta}
+              />
             </View>
+            <RiskStatusCard result={result} palette={palette} />
 
             <View style={styles.recipientBlock}>
-              <Text style={styles.recipientLabel}>RECIPIENT</Text>
-              <Text style={styles.recipientName}>{result.payeeName || "Name not provided"}</Text>
-              <Text style={styles.recipientAmount}>{displayAmount(result)}</Text>
+              <Text style={styles.recipientLabel}>PAYEE</Text>
+              <Text style={styles.recipientName}>
+                {result.payeeName || "Name not provided"}
+              </Text>
+              <Text style={styles.detailLabel}>UPI ID</Text>
+              <Text style={styles.detailValue}>
+                {result.payeeAddress || "Not found"}
+              </Text>
+              <Text style={styles.detailLabel}>AMOUNT</Text>
+              <Text style={styles.recipientAmount}>
+                {displayAmount(result)}
+              </Text>
             </View>
-
             <View style={styles.detailList}>
-              <DetailRow label="UPI ID" value={result.payeeAddress || "Not found"} mono styles={styles} />
-              {result.note ? <DetailRow label="NOTE" value={result.note} styles={styles} /> : null}
-              {result.merchantCategory ? <DetailRow label="CATEGORY" value={result.merchantCategory} styles={styles} /> : null}
+              {result.note ? (
+                <DetailRow label="NOTE" value={result.note} styles={styles} />
+              ) : null}
+              {result.merchantCategory ? (
+                <DetailRow
+                  label="CATEGORY"
+                  value={result.merchantCategory}
+                  styles={styles}
+                />
+              ) : null}
             </View>
 
             <View style={styles.explanationBox}>
-              <View style={[styles.explanationMark, { backgroundColor: riskMeta[result.status].color }]}>
-                <Text style={styles.explanationMarkText}>{riskMeta[result.status].icon}</Text>
+              <View
+                style={[
+                  styles.explanationMark,
+                  { backgroundColor: riskMeta[result.status].color },
+                ]}
+              >
+                <Text style={styles.explanationMarkText}>
+                  {riskMeta[result.status].icon}
+                </Text>
               </View>
               <Text style={styles.explanationText}>{result.explanation}</Text>
             </View>
@@ -551,13 +667,43 @@ export default function HomeScreen() {
             ) : null}
 
             <View style={styles.handoffWarning}>
-              <Text style={styles.handoffWarningTitle}>Before you continue</Text>
-              <Text style={styles.handoffWarningText}>Only enter your UPI PIN to send money. A UPI PIN is never required to receive money. QR Guard will not open your UPI app until the full VPA and payee name are shown above.</Text>
+              <Text style={styles.handoffWarningTitle}>
+                Before you continue
+              </Text>
+              <Text style={styles.handoffWarningText}>
+                Only enter your UPI PIN to send money. A UPI PIN is never
+                required to receive money. QR Guard will not open your UPI app
+                until the full VPA and payee name are shown above.
+              </Text>
             </View>
 
-            <Pressable accessibilityRole="button" accessibilityLabel="Continue to UPI app" onPress={openInUpiApp} disabled={!canProceed} style={({ pressed }) => [styles.primaryButton, !canProceed && styles.disabledButton, pressed && canProceed && styles.primaryButtonPressed]}>
-              <Text style={[styles.primaryButtonText, !canProceed && styles.disabledButtonText]}>{canProceed ? "Continue to UPI app" : "Recipient details required"}</Text>
-              <Text style={[styles.primaryButtonArrow, !canProceed && styles.disabledButtonText]}>→</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open in UPI app"
+              onPress={openInUpiApp}
+              disabled={!canProceed}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                !canProceed && styles.disabledButton,
+                pressed && canProceed && styles.primaryButtonPressed,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.primaryButtonText,
+                  !canProceed && styles.disabledButtonText,
+                ]}
+              >
+                {canProceed ? "Open in UPI app" : "Recipient details required"}
+              </Text>
+              <Text
+                style={[
+                  styles.primaryButtonArrow,
+                  !canProceed && styles.disabledButtonText,
+                ]}
+              >
+                →
+              </Text>
             </Pressable>
             <View style={styles.resultActions}>
               <Pressable
@@ -567,66 +713,29 @@ export default function HomeScreen() {
                   triggerLightHaptic();
                   setReported(true);
                 }}
-                style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+                style={({ pressed }) => [
+                  styles.secondaryButton,
+                  pressed && styles.pressed,
+                ]}
               >
-                <Text style={styles.secondaryButtonText}>{reported ? "Report received" : "Report QR"}</Text>
+                <Text style={styles.secondaryButtonText}>
+                  {reported ? "Report received" : "Report QR"}
+                </Text>
               </Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel="Scan another QR code" onPress={resetReview} style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Scan another QR code"
+                onPress={resetReview}
+                style={({ pressed }) => [
+                  styles.secondaryButton,
+                  pressed && styles.pressed,
+                ]}
+              >
                 <Text style={styles.secondaryButtonText}>Scan another</Text>
               </Pressable>
             </View>
           </View>
         )}
-
-        {!result && recentScans.length > 0 ? (
-          <View style={styles.historySection}>
-            <View style={styles.historyHeader}>
-              <View>
-                <Text style={styles.historyEyebrow}>ON THIS DEVICE</Text>
-                <Text style={styles.historyTitle}>Recent scans</Text>
-              </View>
-              <Text style={styles.historyCount}>{recentScans.length}/5</Text>
-            </View>
-            {recentScans.map((scan) => (
-              <View style={styles.historyRow} key={scan.id}>
-                <View style={[styles.historyStatus, { backgroundColor: riskMeta[scan.status].background }]}>
-                  <Text style={[styles.historyStatusText, { color: riskMeta[scan.status].color }]}>{riskMeta[scan.status].icon}</Text>
-                </View>
-                <View style={styles.historyCopy}>
-                  <Text style={styles.historyHeadline} numberOfLines={1}>
-                    {scan.payeeName}
-                  </Text>
-                  <Text style={styles.historySubline} numberOfLines={1}>
-                    {scan.payeeAddress} · {scan.amount}
-                  </Text>
-                </View>
-                <Text style={[styles.historyRisk, { color: riskMeta[scan.status].color }]}>{riskMeta[scan.status].label}</Text>
-              </View>
-            ))}
-          </View>
-        ) : null}
-
-        <View style={styles.promiseRow}>
-          <View style={styles.promiseItem}>
-            <Text style={styles.promiseNumber}>01</Text>
-            <Text style={styles.promiseText}>Decode locally</Text>
-          </View>
-          <View style={styles.promiseDivider} />
-          <View style={styles.promiseItem}>
-            <Text style={styles.promiseNumber}>02</Text>
-            <Text style={styles.promiseText}>Explain risk</Text>
-          </View>
-          <View style={styles.promiseDivider} />
-          <View style={styles.promiseItem}>
-            <Text style={styles.promiseNumber}>03</Text>
-            <Text style={styles.promiseText}>You decide</Text>
-          </View>
-        </View>
-
-        <View style={styles.disclaimerBox}>
-          <Text style={styles.disclaimerTitle}>A valid QR is not automatically a safe QR.</Text>
-          <Text style={styles.disclaimerText}>QR Guard is an early safety layer. Always confirm the payee name and amount inside your UPI app. Never enter your UPI PIN to receive money.</Text>
-        </View>
       </Animated.ScrollView>
     </ScreenContainer>
   );
@@ -670,8 +779,8 @@ function createStyles(palette: Palette) {
       maxWidth: 760,
       alignSelf: "center",
       paddingHorizontal: 16,
-      paddingTop: 16,
-      paddingBottom: 40,
+      paddingTop: 8,
+      paddingBottom: 18,
     },
     headerRow: {
       flexDirection: "row",
@@ -753,6 +862,112 @@ function createStyles(palette: Palette) {
       fontWeight: "800",
       letterSpacing: 0.7,
     },
+    homeScanContent: {
+      width: "100%",
+      alignItems: "center",
+      paddingTop: 8,
+    },
+    homeEyebrow: {
+      color: palette.blue,
+      fontSize: 10,
+      fontWeight: "900",
+      letterSpacing: 1.7,
+    },
+    homeScanFrame: {
+      width: "100%",
+      maxWidth: 245,
+      aspectRatio: 1,
+      alignSelf: "center",
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 8,
+      borderWidth: 1,
+      borderRadius: 28,
+      overflow: "hidden",
+    },
+    homeScanCorner: {
+      position: "absolute",
+      width: 46,
+      height: 46,
+      zIndex: 1,
+    },
+    homeScanCornerTopLeft: {
+      left: 16,
+      top: 16,
+      borderTopWidth: 4,
+      borderLeftWidth: 4,
+      borderTopLeftRadius: 14,
+    },
+    homeScanCornerTopRight: {
+      right: 16,
+      top: 16,
+      borderTopWidth: 4,
+      borderRightWidth: 4,
+      borderTopRightRadius: 14,
+    },
+    homeScanCornerBottomLeft: {
+      left: 16,
+      bottom: 16,
+      borderBottomWidth: 4,
+      borderLeftWidth: 4,
+      borderBottomLeftRadius: 14,
+    },
+    homeScanCornerBottomRight: {
+      right: 16,
+      bottom: 16,
+      borderBottomWidth: 4,
+      borderRightWidth: 4,
+      borderBottomRightRadius: 14,
+    },
+    homeQrMark: {
+      width: 126,
+      height: 126,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: 35,
+    },
+    homeScanLine: {
+      position: "absolute",
+      left: "12%",
+      right: "12%",
+      height: 2,
+      opacity: 0.9,
+      shadowOpacity: 0.8,
+      shadowRadius: 9,
+      elevation: 5,
+    },
+    homeScanTitle: {
+      color: palette.ink,
+      fontSize: 23,
+      lineHeight: 29,
+      fontWeight: "800",
+      marginTop: 6,
+    },
+    homeScanSubtitle: {
+      color: palette.inkSoft,
+      fontSize: 13,
+      textAlign: "center",
+      marginTop: 4,
+    },
+    trustRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      justifyContent: "center",
+      alignItems: "center",
+      gap: 8,
+      marginTop: 8,
+    },
+    trustText: {
+      color: palette.muted,
+      fontSize: 10,
+      fontWeight: "700",
+    },
+    trustDot: {
+      width: 3,
+      height: 3,
+      borderRadius: 2,
+      backgroundColor: palette.green,
+    },
     heroSection: {
       paddingTop: 34,
       paddingBottom: 18,
@@ -774,7 +989,10 @@ function createStyles(palette: Palette) {
     },
     heroTitle: {
       color: palette.ink,
-      fontFamily: Platform.OS === "web" ? "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" : "System",
+      fontFamily:
+        Platform.OS === "web"
+          ? "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+          : "System",
       fontSize: 37,
       lineHeight: 43,
       fontWeight: "800",
@@ -935,6 +1153,8 @@ function createStyles(palette: Palette) {
       marginBottom: 20,
     },
     primaryButton: {
+      width: "100%",
+      maxWidth: 380,
       minHeight: 54,
       borderRadius: 15,
       backgroundColor: palette.green,
@@ -990,7 +1210,7 @@ function createStyles(palette: Palette) {
       flexDirection: "row",
       alignItems: "center",
       gap: 7,
-      marginTop: 12,
+      marginTop: 8,
       paddingVertical: 6,
     },
     uploadButtonIcon: {

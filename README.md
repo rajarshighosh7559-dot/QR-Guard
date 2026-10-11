@@ -14,6 +14,7 @@
 - **Risk review** with Valid, Unverified, Suspicious, and Blocked results, including VPA structure checks, recognized PSP-handle lookup, and anomaly signals.
 - **Recipient confirmation gate**: the app requires both the full VPA and payee name before offering a UPI-app handoff.
 - **Recent scan history** stored locally on the device.
+- **Home, Scan, History, and Learn tabs** for quick QR scanning, private scan history, and payment safety guidance.
 - **Sample scenarios** for a normal, suspicious, and blocked QR so you can explore the review flow without a real payment.
 - **Payment safety guidance**, including a reminder that a UPI PIN is used to send money, never to receive it.
 - **Installable web app** with a branded home-screen icon and offline app-shell caching.
