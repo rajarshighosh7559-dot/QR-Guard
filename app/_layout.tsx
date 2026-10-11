@@ -8,13 +8,8 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 import { Platform } from "react-native";
 import "@/lib/_core/nativewind-pressable";
-import { ThemeProvider } from "@/lib/theme-provider";
-import {
-  SafeAreaFrameContext,
-  SafeAreaInsetsContext,
-  SafeAreaProvider,
-  initialWindowMetrics,
-} from "react-native-safe-area-context";
+import { ThemeProvider, useThemeContext } from "@/lib/theme-provider";
+import { SafeAreaFrameContext, SafeAreaInsetsContext, SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 import type { EdgeInsets, Metrics, Rect } from "react-native-safe-area-context";
 
 import { trpc, createTRPCClient } from "@/lib/trpc";
@@ -26,6 +21,11 @@ const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
 export const unstable_settings = {
   anchor: "(tabs)",
 };
+
+function ThemeStatusBar() {
+  const { colorScheme } = useThemeContext();
+  return <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />;
+}
 
 export default function RootLayout() {
   const initialInsets = initialWindowMetrics?.insets ?? DEFAULT_WEB_INSETS;
@@ -68,7 +68,10 @@ export default function RootLayout() {
 
   // Ensure minimum 8px padding for top and bottom on mobile
   const providerInitialMetrics = useMemo(() => {
-    const metrics = initialWindowMetrics ?? { insets: initialInsets, frame: initialFrame };
+    const metrics = initialWindowMetrics ?? {
+      insets: initialInsets,
+      frame: initialFrame,
+    };
     return {
       ...metrics,
       insets: {
@@ -93,7 +96,7 @@ export default function RootLayout() {
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="oauth/callback" />
           </Stack>
-          <StatusBar style="light" />
+          <ThemeStatusBar />
         </QueryClientProvider>
       </trpc.Provider>
     </GestureHandlerRootView>
@@ -106,9 +109,7 @@ export default function RootLayout() {
       <ThemeProvider>
         <SafeAreaProvider initialMetrics={providerInitialMetrics}>
           <SafeAreaFrameContext.Provider value={frame}>
-            <SafeAreaInsetsContext.Provider value={insets}>
-              {content}
-            </SafeAreaInsetsContext.Provider>
+            <SafeAreaInsetsContext.Provider value={insets}>{content}</SafeAreaInsetsContext.Provider>
           </SafeAreaFrameContext.Provider>
         </SafeAreaProvider>
       </ThemeProvider>

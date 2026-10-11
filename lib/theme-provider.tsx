@@ -1,8 +1,11 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Appearance, View, useColorScheme as useSystemColorScheme } from "react-native";
 import { colorScheme as nativewindColorScheme, vars } from "nativewind";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { SchemeColors, type ColorScheme } from "@/constants/theme";
+
+const THEME_PREFERENCE_KEY = "qr-guard.color-scheme.v1";
 
 type ThemeContextValue = {
   colorScheme: ColorScheme;
@@ -14,6 +17,8 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const systemScheme = useSystemColorScheme() ?? "light";
   const [colorScheme, setColorSchemeState] = useState<ColorScheme>(systemScheme);
+  const [hasLoadedPreference, setHasLoadedPreference] = useState(false);
+  const hasUserSelectedScheme = useRef(false);
 
   const applyScheme = useCallback((scheme: ColorScheme) => {
     nativewindColorScheme.set(scheme);
@@ -29,14 +34,41 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const setColorScheme = useCallback((scheme: ColorScheme) => {
-    setColorSchemeState(scheme);
-    applyScheme(scheme);
-  }, [applyScheme]);
+  const setColorScheme = useCallback(
+    (scheme: ColorScheme) => {
+      hasUserSelectedScheme.current = true;
+      setColorSchemeState(scheme);
+      void AsyncStorage.setItem(THEME_PREFERENCE_KEY, scheme).catch((error) => {
+        console.error("Could not save the color scheme preference.", error);
+      });
+      applyScheme(scheme);
+    },
+    [applyScheme],
+  );
 
   useEffect(() => {
+    let isMounted = true;
+    void AsyncStorage.getItem(THEME_PREFERENCE_KEY)
+      .then((preference) => {
+        if (!isMounted) return;
+        if (!hasUserSelectedScheme.current && (preference === "light" || preference === "dark")) {
+          setColorSchemeState(preference);
+        }
+        setHasLoadedPreference(true);
+      })
+      .catch((error) => {
+        console.error("Could not load the color scheme preference.", error);
+        if (isMounted) setHasLoadedPreference(true);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedPreference) return;
     applyScheme(colorScheme);
-  }, [applyScheme, colorScheme]);
+  }, [applyScheme, colorScheme, hasLoadedPreference]);
 
   const themeVariables = useMemo(
     () =>
@@ -61,11 +93,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }),
     [colorScheme, setColorScheme],
   );
-  console.log(value, themeVariables)
-
   return (
     <ThemeContext.Provider value={value}>
-      <View style={[{ flex: 1 }, themeVariables]}>{children}</View>
+      <View style={[{ flex: 1, backgroundColor: SchemeColors[colorScheme].background }, themeVariables]}>{children}</View>
     </ThemeContext.Provider>
   );
 }

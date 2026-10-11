@@ -4,54 +4,84 @@ import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { useNavigation } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-import {
-  Alert,
-  Animated,
-  Image,
-  Linking,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  useWindowDimensions,
-} from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Animated, Image, Linking, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 
+import { type ColorScheme } from "@/constants/theme";
 import { ScreenContainer } from "@/components/screen-container";
-import {
-  demoUpiPayload,
-  blockedDemoUpiPayload,
-  displayAmount,
-  parseUpiQr,
-  suspiciousDemoUpiPayload,
-  type RiskStatus,
-  type UpiPayload,
-} from "@/lib/upi";
+import { useThemeContext } from "@/lib/theme-provider";
+import { demoUpiPayload, blockedDemoUpiPayload, displayAmount, parseUpiQr, suspiciousDemoUpiPayload, type RiskStatus, type UpiPayload } from "@/lib/upi";
 
-const palette = {
-  ink: "#E7F5F0",
-  inkSoft: "#A5BCB5",
-  paper: "#071210",
-  card: "#0D1B19",
-  line: "#1B3934",
-  muted: "#8BA49C",
-  blue: "#42DDEB",
-  blueSoft: "#103236",
-  green: "#45F2A3",
-  greenSoft: "#10382D",
-  amber: "#FFD078",
-  amberSoft: "#3A301B",
-  red: "#FF7284",
-  redSoft: "#3D2028",
-};
+function getPalette(scheme: ColorScheme) {
+  if (scheme === "light") {
+    return {
+      ink: "#12302A",
+      inkSoft: "#3D5A52",
+      buttonText: "#FFFFFF",
+      paper: "#F4F8F6",
+      card: "#FFFFFF",
+      line: "#D6E6E0",
+      muted: "#607A72",
+      blue: "#087D8C",
+      blueSoft: "#DDF4F5",
+      green: "#087A50",
+      greenSoft: "#DDF4E9",
+      amber: "#946000",
+      amberSoft: "#FFF0CC",
+      red: "#B4233A",
+      redSoft: "#FCE4E7",
+    };
+  }
+  return {
+    ink: "#E7F5F0",
+    inkSoft: "#A5BCB5",
+    buttonText: "#E7F5F0",
+    paper: "#071210",
+    card: "#0D1B19",
+    line: "#1B3934",
+    muted: "#8BA49C",
+    blue: "#42DDEB",
+    blueSoft: "#103236",
+    green: "#45F2A3",
+    greenSoft: "#10382D",
+    amber: "#FFD078",
+    amberSoft: "#3A301B",
+    red: "#FF7284",
+    redSoft: "#3D2028",
+  };
+}
 
-const riskMeta: Record<RiskStatus, { label: string; color: string; background: string; icon: string }> = {
-  valid: { label: "Valid", color: palette.green, background: palette.greenSoft, icon: "✓" },
-  unverified: { label: "Unverified", color: palette.amber, background: palette.amberSoft, icon: "!" },
-  suspicious: { label: "Suspicious", color: palette.red, background: palette.redSoft, icon: "!" },
-  blocked: { label: "Blocked", color: palette.red, background: palette.redSoft, icon: "×" },
-};
+type Palette = ReturnType<typeof getPalette>;
+type RiskMeta = Record<RiskStatus, { label: string; color: string; background: string; icon: string }>;
+
+function getRiskMeta(palette: Palette): RiskMeta {
+  return {
+    valid: {
+      label: "Valid",
+      color: palette.green,
+      background: palette.greenSoft,
+      icon: "✓",
+    },
+    unverified: {
+      label: "Unverified",
+      color: palette.amber,
+      background: palette.amberSoft,
+      icon: "!",
+    },
+    suspicious: {
+      label: "Suspicious",
+      color: palette.red,
+      background: palette.redSoft,
+      icon: "!",
+    },
+    blocked: {
+      label: "Blocked",
+      color: palette.red,
+      background: palette.redSoft,
+      icon: "×",
+    },
+  };
+}
 
 const HISTORY_KEY = "qr-guard.recent-scans.v1";
 
@@ -72,24 +102,12 @@ type TabRoutes = {
 const DEMO_SCAN_SIGNATURES = new Set(
   [demoUpiPayload, suspiciousDemoUpiPayload, blockedDemoUpiPayload].map((payload) => {
     const parsed = parseUpiQr(payload);
-    return JSON.stringify([
-      parsed.status,
-      parsed.payeeName || "Name not provided",
-      parsed.payeeAddress || "Not found",
-      displayAmount(parsed),
-      parsed.headline,
-    ]);
+    return JSON.stringify([parsed.status, parsed.payeeName || "Name not provided", parsed.payeeAddress || "Not found", displayAmount(parsed), parsed.headline]);
   }),
 );
 
 function isDemoScan(scan: RecentScan) {
-  return DEMO_SCAN_SIGNATURES.has(JSON.stringify([
-    scan.status,
-    scan.payeeName,
-    scan.payeeAddress,
-    scan.amount,
-    scan.headline,
-  ]));
+  return DEMO_SCAN_SIGNATURES.has(JSON.stringify([scan.status, scan.payeeName, scan.payeeAddress, scan.amount, scan.headline]));
 }
 
 function triggerLightHaptic() {
@@ -100,15 +118,11 @@ function triggerLightHaptic() {
 
 function triggerResultHaptic(status: RiskStatus) {
   if (Platform.OS !== "web") {
-    void Haptics.notificationAsync(
-      status === "blocked" || status === "suspicious"
-        ? Haptics.NotificationFeedbackType.Warning
-        : Haptics.NotificationFeedbackType.Success,
-    );
+    void Haptics.notificationAsync(status === "blocked" || status === "suspicious" ? Haptics.NotificationFeedbackType.Warning : Haptics.NotificationFeedbackType.Success);
   }
 }
 
-function RiskBadge({ status }: { status: RiskStatus }) {
+function RiskBadge({ status, styles, riskMeta }: { status: RiskStatus; styles: HomeStyles; riskMeta: RiskMeta }) {
   const meta = riskMeta[status];
   return (
     <View style={[styles.riskBadge, { backgroundColor: meta.background }]}>
@@ -120,18 +134,20 @@ function RiskBadge({ status }: { status: RiskStatus }) {
   );
 }
 
-function DetailRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+function DetailRow({ label, value, mono = false, styles }: { label: string; value: string; mono?: boolean; styles: HomeStyles }) {
   return (
     <View style={styles.detailRow}>
       <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={[styles.detailValue, mono && styles.monoValue]}>
-        {value}
-      </Text>
+      <Text style={[styles.detailValue, mono && styles.monoValue]}>{value}</Text>
     </View>
   );
 }
 
 export default function HomeScreen() {
+  const { colorScheme, setColorScheme } = useThemeContext();
+  const palette = useMemo(() => getPalette(colorScheme), [colorScheme]);
+  const styles = useMemo(() => createStyles(palette), [palette]);
+  const riskMeta = useMemo(() => getRiskMeta(palette), [palette]);
   const navigation = useNavigation<BottomTabNavigationProp<TabRoutes>>();
   const isWideScreen = useWindowDimensions().width >= 720;
   const [permission, requestPermission] = useCameraPermissions();
@@ -159,8 +175,16 @@ export default function HomeScreen() {
     screenOpacity.setValue(0);
     screenY.setValue(10);
     Animated.parallel([
-      Animated.timing(screenOpacity, { toValue: 1, duration: 260, useNativeDriver: true }),
-      Animated.timing(screenY, { toValue: 0, duration: 260, useNativeDriver: true }),
+      Animated.timing(screenOpacity, {
+        toValue: 1,
+        duration: 260,
+        useNativeDriver: true,
+      }),
+      Animated.timing(screenY, {
+        toValue: 0,
+        duration: 260,
+        useNativeDriver: true,
+      }),
     ]).start();
   }, [isScanning, result, screenOpacity, screenY]);
 
@@ -231,10 +255,7 @@ export default function HomeScreen() {
     if (!permission?.granted) {
       const response = await requestPermission();
       if (!response.granted) {
-        Alert.alert(
-          "Camera permission needed",
-          "QR Guard uses your camera only to read the QR code. It never reads your UPI PIN or bank credentials.",
-        );
+        Alert.alert("Camera permission needed", "QR Guard uses your camera only to read the QR code. It never reads your UPI PIN or bank credentials.");
         return;
       }
     }
@@ -272,7 +293,13 @@ export default function HomeScreen() {
       Alert.alert("Image selected", "This device selected the QR image. Use the camera scanner to decode it, or try the image again in a modern browser.");
       return;
     }
-    const Detector = (globalThis as typeof globalThis & { BarcodeDetector?: new (options?: { formats: string[] }) => { detect: (source: ImageBitmap) => Promise<Array<{ rawValue?: string }>> } }).BarcodeDetector;
+    const Detector = (
+      globalThis as typeof globalThis & {
+        BarcodeDetector?: new (options?: { formats: string[] }) => {
+          detect: (source: ImageBitmap) => Promise<Array<{ rawValue?: string }>>;
+        };
+      }
+    ).BarcodeDetector;
     if (!Detector || typeof createImageBitmap !== "function") {
       Alert.alert("Image decoder unavailable", "Your browser cannot decode QR images yet. Try Open scanner or use a modern Chrome or Edge browser.");
       return;
@@ -301,20 +328,14 @@ export default function HomeScreen() {
 
   async function openInUpiApp() {
     if (!result?.isUpi || !result.payeeAddress || !result.payeeName) {
-      Alert.alert(
-        "Recipient details required",
-        "QR Guard will not open a UPI app until the full recipient VPA and payee name are visible. Confirm the recipient through another trusted channel.",
-      );
+      Alert.alert("Recipient details required", "QR Guard will not open a UPI app until the full recipient VPA and payee name are visible. Confirm the recipient through another trusted channel.");
       return;
     }
     triggerLightHaptic();
     try {
       const supported = await Linking.canOpenURL(result.raw);
       if (!supported && Platform.OS === "web") {
-        Alert.alert(
-          "Ready for handoff",
-          "On your phone, this QR would now open the UPI app you choose. The payment itself stays inside that app.",
-        );
+        Alert.alert("Ready for handoff", "On your phone, this QR would now open the UPI app you choose. The payment itself stays inside that app.");
         return;
       }
       if (!supported) {
@@ -330,21 +351,11 @@ export default function HomeScreen() {
   if (isScanning) {
     return (
       <ScreenContainer edges={["top", "bottom", "left", "right"]} containerClassName="bg-background" className="p-0">
-        <Animated.View style={[styles.scannerScreen, { opacity: screenOpacity, transform: [{ translateY: screenY }] }]}> 
-          <CameraView
-            style={StyleSheet.absoluteFill}
-            facing="back"
-            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-            onBarcodeScanned={handleBarcodeScanned}
-          />
+        <Animated.View style={[styles.scannerScreen, { opacity: screenOpacity, transform: [{ translateY: screenY }] }]}>
+          <CameraView style={StyleSheet.absoluteFill} facing="back" barcodeScannerSettings={{ barcodeTypes: ["qr"] }} onBarcodeScanned={handleBarcodeScanned} />
           <View style={styles.scannerOverlay}>
             <View style={styles.scannerTopBar}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Close scanner"
-                onPress={() => setIsScanning(false)}
-                style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
-              >
+              <Pressable accessibilityRole="button" accessibilityLabel="Close scanner" onPress={() => setIsScanning(false)} style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}>
                 <Text style={styles.closeButtonText}>×</Text>
               </Pressable>
               <View style={styles.scannerTopCopy}>
@@ -389,6 +400,9 @@ export default function HomeScreen() {
             <Text style={styles.brandName}>QR GUARD</Text>
             <Text style={styles.brandCaption}>scan before you pay</Text>
           </View>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Switch to ${colorScheme === "dark" ? "light" : "dark"} mode`} onPress={() => setColorScheme(colorScheme === "dark" ? "light" : "dark")} style={({ pressed }) => [styles.themeToggle, { backgroundColor: palette.card, borderColor: palette.line }, pressed && styles.pressed]}>
+            <Text style={[styles.themeToggleText, { color: palette.blue }]}>{colorScheme === "dark" ? "☀" : "☾"}</Text>
+          </Pressable>
           <View style={styles.privacyPill}>
             <View style={styles.privacyDot} />
             <Text style={styles.privacyText}>PRIVATE BY DEFAULT</Text>
@@ -399,22 +413,26 @@ export default function HomeScreen() {
           <View style={isWideScreen && styles.heroCopyWide}>
             <Text style={styles.heroKicker}>A LITTLE CLARITY BEFORE YOU PAY</Text>
             <Text style={styles.heroTitle}>Know who gets paid.</Text>
-            <Text style={styles.heroBody}>
-              Read the recipient, amount, and risk signals before your UPI app opens.
-            </Text>
+            <Text style={styles.heroBody}>Read the recipient, amount, and risk signals before your UPI app opens.</Text>
           </View>
-          <View
-            style={[styles.securityVisual, isWideScreen && styles.securityVisualWide]}
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
-          >
+          <View style={[styles.securityVisual, isWideScreen && styles.securityVisualWide]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
             <View style={styles.radarTrack} />
             <Animated.View
               style={[
                 styles.radarPulse,
                 {
-                  opacity: radarProgress.interpolate({ inputRange: [0, 0.7, 1], outputRange: [0.5, 0.18, 0] }),
-                  transform: [{ scale: radarProgress.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1.45] }) }],
+                  opacity: radarProgress.interpolate({
+                    inputRange: [0, 0.7, 1],
+                    outputRange: [0.5, 0.18, 0],
+                  }),
+                  transform: [
+                    {
+                      scale: radarProgress.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.55, 1.45],
+                      }),
+                    },
+                  ],
                 },
               ]}
             />
@@ -441,33 +459,16 @@ export default function HomeScreen() {
                 <Text style={styles.shieldIconText}>⌁</Text>
               </View>
             </View>
-            <Text style={styles.scanCardBody}>
-              We check the payment payload on this device first. No UPI PIN. No bank login. No payment until you choose to continue.
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Open QR scanner"
-              onPress={startScanner}
-              style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed]}
-            >
+            <Text style={styles.scanCardBody}>We check the payment payload on this device first. No UPI PIN. No bank login. No payment until you choose to continue.</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Open QR scanner" onPress={startScanner} style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed]}>
               <Text style={styles.primaryButtonText}>Scan a QR code</Text>
               <Text style={styles.primaryButtonArrow}>→</Text>
             </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="View a demo QR review"
-              onPress={showDemo}
-              style={({ pressed }) => [styles.demoButton, pressed && styles.pressed]}
-            >
+            <Pressable accessibilityRole="button" accessibilityLabel="View a demo QR review" onPress={showDemo} style={({ pressed }) => [styles.demoButton, pressed && styles.pressed]}>
               <Text style={styles.demoButtonText}>See a sample review</Text>
               <Text style={styles.demoButtonArrow}>↗</Text>
             </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Upload a QR image"
-              onPress={uploadQrImage}
-              style={({ pressed }) => [styles.uploadButton, pressed && styles.pressed]}
-            >
+            <Pressable accessibilityRole="button" accessibilityLabel="Upload a QR image" onPress={uploadQrImage} style={({ pressed }) => [styles.uploadButton, pressed && styles.pressed]}>
               <Text style={styles.uploadButtonIcon}>▧</Text>
               <Text style={styles.uploadButtonText}>{uploadedImageUri ? "Choose another QR image" : "Upload a QR image"}</Text>
             </Pressable>
@@ -485,8 +486,24 @@ export default function HomeScreen() {
           </View>
         ) : (
           <View style={styles.resultCard}>
-            <View style={[styles.statusHero, { backgroundColor: riskMeta[result.status].background, borderColor: riskMeta[result.status].color }]}>
-              <View style={[styles.statusHeroIcon, { backgroundColor: riskMeta[result.status].color, borderColor: riskMeta[result.status].color }]}>
+            <View
+              style={[
+                styles.statusHero,
+                {
+                  backgroundColor: riskMeta[result.status].background,
+                  borderColor: riskMeta[result.status].color,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.statusHeroIcon,
+                  {
+                    backgroundColor: riskMeta[result.status].color,
+                    borderColor: riskMeta[result.status].color,
+                  },
+                ]}
+              >
                 <Text style={styles.statusHeroIconText}>{riskMeta[result.status].icon}</Text>
               </View>
               <View style={styles.statusHeroCopy}>
@@ -500,7 +517,7 @@ export default function HomeScreen() {
                 <Text style={styles.cardEyebrow}>SCAN COMPLETE</Text>
                 <Text style={styles.resultTitle}>{result.headline}</Text>
               </View>
-              <RiskBadge status={result.status} />
+              <RiskBadge status={result.status} styles={styles} riskMeta={riskMeta} />
             </View>
 
             <View style={styles.recipientBlock}>
@@ -510,9 +527,9 @@ export default function HomeScreen() {
             </View>
 
             <View style={styles.detailList}>
-              <DetailRow label="UPI ID" value={result.payeeAddress || "Not found"} mono />
-              {result.note ? <DetailRow label="NOTE" value={result.note} /> : null}
-              {result.merchantCategory ? <DetailRow label="CATEGORY" value={result.merchantCategory} /> : null}
+              <DetailRow label="UPI ID" value={result.payeeAddress || "Not found"} mono styles={styles} />
+              {result.note ? <DetailRow label="NOTE" value={result.note} styles={styles} /> : null}
+              {result.merchantCategory ? <DetailRow label="CATEGORY" value={result.merchantCategory} styles={styles} /> : null}
             </View>
 
             <View style={styles.explanationBox}>
@@ -535,21 +552,11 @@ export default function HomeScreen() {
 
             <View style={styles.handoffWarning}>
               <Text style={styles.handoffWarningTitle}>Before you continue</Text>
-              <Text style={styles.handoffWarningText}>
-                Only enter your UPI PIN to send money. A UPI PIN is never required to receive money. QR Guard will not open your UPI app until the full VPA and payee name are shown above.
-              </Text>
+              <Text style={styles.handoffWarningText}>Only enter your UPI PIN to send money. A UPI PIN is never required to receive money. QR Guard will not open your UPI app until the full VPA and payee name are shown above.</Text>
             </View>
 
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Continue to UPI app"
-              onPress={openInUpiApp}
-              disabled={!canProceed}
-              style={({ pressed }) => [styles.primaryButton, !canProceed && styles.disabledButton, pressed && canProceed && styles.primaryButtonPressed]}
-            >
-              <Text style={[styles.primaryButtonText, !canProceed && styles.disabledButtonText]}>
-                {canProceed ? "Continue to UPI app" : "Recipient details required"}
-              </Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Continue to UPI app" onPress={openInUpiApp} disabled={!canProceed} style={({ pressed }) => [styles.primaryButton, !canProceed && styles.disabledButton, pressed && canProceed && styles.primaryButtonPressed]}>
+              <Text style={[styles.primaryButtonText, !canProceed && styles.disabledButtonText]}>{canProceed ? "Continue to UPI app" : "Recipient details required"}</Text>
               <Text style={[styles.primaryButtonArrow, !canProceed && styles.disabledButtonText]}>→</Text>
             </Pressable>
             <View style={styles.resultActions}>
@@ -564,12 +571,7 @@ export default function HomeScreen() {
               >
                 <Text style={styles.secondaryButtonText}>{reported ? "Report received" : "Report QR"}</Text>
               </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Scan another QR code"
-                onPress={resetReview}
-                style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
-              >
+              <Pressable accessibilityRole="button" accessibilityLabel="Scan another QR code" onPress={resetReview} style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}>
                 <Text style={styles.secondaryButtonText}>Scan another</Text>
               </Pressable>
             </View>
@@ -591,8 +593,12 @@ export default function HomeScreen() {
                   <Text style={[styles.historyStatusText, { color: riskMeta[scan.status].color }]}>{riskMeta[scan.status].icon}</Text>
                 </View>
                 <View style={styles.historyCopy}>
-                  <Text style={styles.historyHeadline} numberOfLines={1}>{scan.payeeName}</Text>
-                  <Text style={styles.historySubline} numberOfLines={1}>{scan.payeeAddress} · {scan.amount}</Text>
+                  <Text style={styles.historyHeadline} numberOfLines={1}>
+                    {scan.payeeName}
+                  </Text>
+                  <Text style={styles.historySubline} numberOfLines={1}>
+                    {scan.payeeAddress} · {scan.amount}
+                  </Text>
                 </View>
                 <Text style={[styles.historyRisk, { color: riskMeta[scan.status].color }]}>{riskMeta[scan.status].label}</Text>
               </View>
@@ -619,893 +625,908 @@ export default function HomeScreen() {
 
         <View style={styles.disclaimerBox}>
           <Text style={styles.disclaimerTitle}>A valid QR is not automatically a safe QR.</Text>
-          <Text style={styles.disclaimerText}>
-            QR Guard is an early safety layer. Always confirm the payee name and amount inside your UPI app. Never enter your UPI PIN to receive money.
-          </Text>
+          <Text style={styles.disclaimerText}>QR Guard is an early safety layer. Always confirm the payee name and amount inside your UPI app. Never enter your UPI PIN to receive money.</Text>
         </View>
       </Animated.ScrollView>
     </ScreenContainer>
   );
 }
 
-const styles = StyleSheet.create({
-  backgroundPattern: {
-    ...StyleSheet.absoluteFillObject,
-    overflow: "hidden",
-  },
-  ambientOrb: {
-    position: "absolute",
-    top: -125,
-    right: -95,
-    width: 310,
-    height: 310,
-    borderRadius: 155,
-    borderWidth: 1,
-    borderColor: "rgba(66, 221, 235, 0.12)",
-    backgroundColor: "rgba(23, 118, 99, 0.08)",
-  },
-  circuitTrace: {
-    position: "absolute",
-    width: 200,
-    height: 1,
-    backgroundColor: "rgba(69, 242, 163, 0.12)",
-  },
-  circuitTraceOne: {
-    top: 176,
-    right: -74,
-    transform: [{ rotate: "-36deg" }],
-  },
-  circuitTraceTwo: {
-    top: 206,
-    right: -112,
-    transform: [{ rotate: "-36deg" }],
-  },
-  scrollContent: {
-    width: "100%",
-    maxWidth: 760,
-    alignSelf: "center",
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 40,
-  },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  brandMark: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: "#0B2420",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  brandMarkInner: {
-    width: 21,
-    height: 21,
-    borderRadius: 7,
-    borderWidth: 2,
-    borderColor: palette.green,
-    transform: [{ rotate: "45deg" }],
-  },
-  brandMarkCore: {
-    position: "absolute",
-    width: 6,
-    height: 6,
-    borderRadius: 2,
-    backgroundColor: palette.blue,
-    transform: [{ rotate: "45deg" }],
-  },
-  brandCopy: {
-    flex: 1,
-  },
-  brandName: {
-    color: palette.ink,
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 1.4,
-  },
-  brandCaption: {
-    color: palette.muted,
-    fontSize: 11,
-    marginTop: 1,
-  },
-  privacyPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-    borderRadius: 99,
-    backgroundColor: "#0D211E",
-    borderWidth: 1,
-    borderColor: palette.line,
-  },
-  privacyDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: palette.green,
-  },
-  privacyText: {
-    color: palette.muted,
-    fontSize: 8,
-    fontWeight: "800",
-    letterSpacing: 0.7,
-  },
-  heroSection: {
-    paddingTop: 34,
-    paddingBottom: 18,
-  },
-  heroSectionWide: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  heroCopyWide: {
-    flex: 1,
-  },
-  heroKicker: {
-    color: palette.blue,
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 1.8,
-    marginBottom: 9,
-  },
-  heroTitle: {
-    color: palette.ink,
-    fontFamily: Platform.OS === "web" ? "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" : "System",
-    fontSize: 37,
-    lineHeight: 43,
-    fontWeight: "800",
-    letterSpacing: -1.2,
-  },
-  heroBody: {
-    color: palette.inkSoft,
-    fontSize: 15,
-    lineHeight: 22,
-    marginTop: 13,
-    maxWidth: 335,
-  },
-  securityVisual: {
-    height: 148,
-    width: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  securityVisualWide: {
-    width: 190,
-    height: 190,
-    flexShrink: 0,
-    marginTop: 0,
-    marginBottom: 0,
-  },
-  radarTrack: {
-    position: "absolute",
-    width: 142,
-    height: 142,
-    borderRadius: 71,
-    borderWidth: 1,
-    borderColor: "rgba(66, 221, 235, 0.3)",
-    backgroundColor: "rgba(19, 91, 79, 0.08)",
-  },
-  radarPulse: {
-    position: "absolute",
-    width: 126,
-    height: 126,
-    borderRadius: 63,
-    borderWidth: 1,
-    borderColor: "rgba(69, 242, 163, 0.72)",
-    backgroundColor: "rgba(69, 242, 163, 0.08)",
-  },
-  shieldAura: {
-    width: 94,
-    height: 94,
-    borderRadius: 32,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#0D2722",
-    borderWidth: 1,
-    borderColor: "#286452",
-    shadowColor: palette.green,
-    shadowOpacity: 0.38,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 8,
-  },
-  heroShield: {
-    width: 52,
-    height: 52,
-    borderRadius: 17,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#174638",
-    borderWidth: 1,
-    borderColor: palette.green,
-    transform: [{ rotate: "45deg" }],
-  },
-  heroShieldCheck: {
-    color: palette.green,
-    fontSize: 30,
-    lineHeight: 34,
-    fontWeight: "800",
-    transform: [{ rotate: "-45deg" }],
-  },
-  localCheckPill: {
-    position: "absolute",
-    bottom: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    borderRadius: 99,
-    backgroundColor: "#0D211E",
-    borderWidth: 1,
-    borderColor: "#235147",
-  },
-  localCheckDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: palette.green,
-  },
-  localCheckText: {
-    color: "#B9DCD0",
-    fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 1,
-  },
-  scanCard: {
-    backgroundColor: "#0A1917",
-    borderRadius: 26,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: "#1D5145",
-    shadowColor: palette.green,
-    shadowOpacity: 0.16,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 5,
-  },
-  scanCardTop: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-  },
-  cardEyebrow: {
-    color: palette.blue,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1.5,
-    marginBottom: 7,
-  },
-  scanCardEyebrow: {
-    color: palette.blue,
-  },
-  scanCardTitle: {
-    color: "#F1FBF7",
-    fontSize: 26,
-    lineHeight: 31,
-    fontWeight: "700",
-  },
-  shieldIcon: {
-    width: 45,
-    height: 45,
-    borderRadius: 15,
-    backgroundColor: "#123A32",
-    borderWidth: 1,
-    borderColor: "#28725C",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  shieldIconText: {
-    color: palette.green,
-    fontSize: 28,
-    lineHeight: 28,
-    transform: [{ rotate: "180deg" }],
-  },
-  scanCardBody: {
-    color: "#B2C9C0",
-    fontSize: 14,
-    lineHeight: 21,
-    marginTop: 15,
-    marginBottom: 20,
-  },
-  primaryButton: {
-    minHeight: 54,
-    borderRadius: 15,
-    backgroundColor: palette.green,
-    shadowColor: palette.green,
-    shadowOpacity: 0.48,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 8,
-    paddingHorizontal: 17,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  primaryButtonPressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.98 }],
-  },
-  disabledButton: {
-    backgroundColor: "#20312D",
-  },
-  disabledButtonText: {
-    color: "#839891",
-  },
-  primaryButtonText: {
-    color: palette.ink,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  primaryButtonArrow: {
-    color: palette.ink,
-    fontSize: 24,
-    lineHeight: 25,
-  },
-  demoButton: {
-    alignSelf: "center",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 18,
-    padding: 4,
-  },
-  demoButtonText: {
-    color: "#B8D4CA",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  demoButtonArrow: {
-    color: palette.blue,
-    fontSize: 16,
-  },
-  uploadButton: {
-    alignSelf: "center",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-    marginTop: 12,
-    paddingVertical: 6,
-  },
-  uploadButtonIcon: {
-    color: palette.blue,
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  uploadButtonText: {
-    color: palette.blue,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  uploadPreview: {
-    alignSelf: "center",
-    width: 52,
-    height: 52,
-    borderRadius: 12,
-    marginTop: 5,
-    borderWidth: 1,
-    borderColor: palette.line,
-  },
-  sampleRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 8,
-    marginTop: 12,
-  },
-  sampleChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    borderRadius: 99,
-    backgroundColor: "#102824",
-    borderWidth: 1,
-    borderColor: "#1B4940",
-  },
-  sampleDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  sampleChipText: {
-    color: "#C6DCD4",
-    fontSize: 10,
-    fontWeight: "700",
-  },
-  resultCard: {
-    backgroundColor: palette.card,
-    borderRadius: 26,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: palette.line,
-    shadowColor: "#000000",
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 3,
-  },
-  statusHero: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 20,
-    padding: 14,
-    marginBottom: 16,
-    borderWidth: 1,
-    shadowColor: palette.green,
-    shadowOpacity: 0.14,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 3,
-  },
-  statusHeroIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    shadowColor: palette.green,
-    shadowOpacity: 0.32,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 4,
-  },
-  statusHeroIconText: {
-    color: "#062016",
-    fontSize: 22,
-    fontWeight: "900",
-  },
-  statusHeroCopy: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  statusHeroLabel: {
-    fontSize: 9,
-    fontWeight: "900",
-    letterSpacing: 1.2,
-  },
-  statusHeroTitle: {
-    fontSize: 24,
-    lineHeight: 28,
-    fontWeight: "900",
-    marginTop: 2,
-  },
-  statusHeroArrow: {
-    fontSize: 24,
-    fontWeight: "800",
-  },
-  historySection: {
-    marginTop: 22,
-  },
-  historyHeader: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    marginBottom: 9,
-  },
-  historyEyebrow: {
-    color: palette.blue,
-    fontSize: 9,
-    fontWeight: "900",
-    letterSpacing: 1.2,
-  },
-  historyTitle: {
-    color: palette.ink,
-    fontSize: 20,
-    fontWeight: "800",
-    marginTop: 3,
-  },
-  historyCount: {
-    color: palette.muted,
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  historyRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: palette.card,
-    borderWidth: 1,
-    borderColor: palette.line,
-    borderRadius: 15,
-    padding: 11,
-    marginBottom: 7,
-  },
-  historyStatus: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  historyStatusText: {
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  historyCopy: {
-    flex: 1,
-  },
-  historyHeadline: {
-    color: palette.ink,
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  historySubline: {
-    color: palette.muted,
-    fontSize: 10,
-    marginTop: 3,
-  },
-  historyRisk: {
-    fontSize: 10,
-    fontWeight: "800",
-  },
-  resultHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  resultTitle: {
-    color: palette.ink,
-    fontSize: 24,
-    lineHeight: 29,
-    fontWeight: "800",
-    maxWidth: 190,
-  },
-  riskBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    borderRadius: 99,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-  },
-  riskIcon: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  riskIconText: {
-    color: "#06100F",
-    fontSize: 10,
-    fontWeight: "800",
-  },
-  riskBadgeText: {
-    fontSize: 11,
-    fontWeight: "800",
-  },
-  recipientBlock: {
-    backgroundColor: "#10201E",
-    borderRadius: 17,
-    padding: 15,
-    marginTop: 20,
-    borderWidth: 1,
-    borderColor: "#21433C",
-  },
-  recipientLabel: {
-    color: palette.muted,
-    fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 1.2,
-  },
-  recipientName: {
-    color: palette.ink,
-    fontSize: 18,
-    fontWeight: "700",
-    marginTop: 6,
-  },
-  recipientAmount: {
-    color: palette.blue,
-    fontSize: 20,
-    fontWeight: "800",
-    marginTop: 6,
-  },
-  detailList: {
-    marginTop: 14,
-  },
-  detailRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 12,
-    paddingVertical: 9,
-    borderBottomWidth: 1,
-    borderBottomColor: palette.line,
-  },
-  detailLabel: {
-    color: palette.muted,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 0.9,
-    paddingTop: 2,
-  },
-  detailValue: {
-    color: palette.ink,
-    flex: 1,
-    textAlign: "right",
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: "600",
-  },
-  monoValue: {
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    fontSize: 12,
-  },
-  explanationBox: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 9,
-    backgroundColor: "#10201E",
-    borderRadius: 14,
-    padding: 12,
-    marginTop: 15,
-    borderWidth: 1,
-    borderColor: "#1B4039",
-  },
-  explanationMark: {
-    width: 19,
-    height: 19,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 1,
-  },
-  explanationMarkText: {
-    color: "#FFFFFF",
-    fontSize: 11,
-    fontWeight: "800",
-  },
-  explanationText: {
-    color: palette.inkSoft,
-    flex: 1,
-    fontSize: 12,
-    lineHeight: 18,
-    fontWeight: "500",
-  },
-  handoffWarning: {
-    backgroundColor: "#302917",
-    borderRadius: 14,
-    padding: 12,
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: "#725B2B",
-  },
-  handoffWarningTitle: {
-    color: palette.amber,
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 0.4,
-  },
-  handoffWarningText: {
-    color: "#F0D89B",
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 4,
-  },
-  signalList: {
-    paddingTop: 12,
-    gap: 7,
-  },
-  signalRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
-  },
-  signalBullet: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: palette.amber,
-    marginTop: 6,
-  },
-  signalText: {
-    color: palette.muted,
-    flex: 1,
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  resultActions: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 10,
-  },
-  secondaryButton: {
-    flex: 1,
-    minHeight: 45,
-    borderRadius: 13,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#10201E",
-    borderWidth: 1,
-    borderColor: palette.line,
-  },
-  secondaryButtonText: {
-    color: palette.ink,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  promiseRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 25,
-    paddingVertical: 17,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: palette.line,
-  },
-  promiseItem: {
-    flex: 1,
-    gap: 5,
-  },
-  promiseNumber: {
-    color: palette.blue,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1,
-  },
-  promiseText: {
-    color: palette.inkSoft,
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  promiseDivider: {
-    width: 1,
-    height: 28,
-    backgroundColor: palette.line,
-    marginHorizontal: 7,
-  },
-  disclaimerBox: {
-    paddingTop: 20,
-  },
-  disclaimerTitle: {
-    color: palette.inkSoft,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  disclaimerText: {
-    color: palette.muted,
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 6,
-  },
-  pressed: {
-    opacity: 0.68,
-  },
-  scannerScreen: {
-    flex: 1,
-    backgroundColor: palette.paper,
-  },
-  scannerOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(4, 16, 14, 0.62)",
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 30,
-    justifyContent: "space-between",
-  },
-  scannerTopBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  closeButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(5, 24, 20, 0.82)",
-    borderWidth: 1,
-    borderColor: "rgba(69, 242, 163, 0.45)",
-  },
-  closeButtonText: {
-    color: "#FFFFFF",
-    fontSize: 28,
-    fontWeight: "300",
-    lineHeight: 28,
-  },
-  scannerTopCopy: {
-    alignItems: "center",
-  },
-  scannerEyebrow: {
-    color: palette.blue,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1.6,
-  },
-  scannerTitle: {
-    color: "#FFFFFF",
-    fontSize: 17,
-    fontWeight: "700",
-    marginTop: 4,
-  },
-  topBarSpacer: {
-    width: 42,
-  },
-  scanWindow: {
-    alignSelf: "center",
-    width: "88%",
-    maxWidth: 380,
-    aspectRatio: 1,
-    borderRadius: 28,
-    borderWidth: 1,
-    borderColor: "rgba(66, 221, 235, 0.5)",
-    backgroundColor: "rgba(7, 25, 22, 0.18)",
-    position: "relative",
-  },
-  corner: {
-    position: "absolute",
-    width: 38,
-    height: 38,
-    borderColor: palette.green,
-  },
-  cornerTopLeft: {
-    top: 0,
-    left: 0,
-    borderTopWidth: 4,
-    borderLeftWidth: 4,
-    borderTopLeftRadius: 15,
-  },
-  cornerTopRight: {
-    top: 0,
-    right: 0,
-    borderTopWidth: 4,
-    borderRightWidth: 4,
-    borderTopRightRadius: 15,
-  },
-  cornerBottomLeft: {
-    bottom: 0,
-    left: 0,
-    borderBottomWidth: 4,
-    borderLeftWidth: 4,
-    borderBottomLeftRadius: 15,
-  },
-  cornerBottomRight: {
-    bottom: 0,
-    right: 0,
-    borderBottomWidth: 4,
-    borderRightWidth: 4,
-    borderBottomRightRadius: 15,
-  },
-  scannerBottomCopy: {
-    alignItems: "center",
-  },
-  scanHintPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 99,
-    backgroundColor: "rgba(5, 24, 20, 0.88)",
-    borderWidth: 1,
-    borderColor: "rgba(69, 242, 163, 0.35)",
-  },
-  liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: palette.green,
-  },
-  scanHintText: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  scanHintSecondary: {
-    color: "#D0E4DC",
-    fontSize: 12,
-    marginTop: 10,
-  },
-});
+function createStyles(palette: Palette) {
+  return StyleSheet.create({
+    backgroundPattern: {
+      ...StyleSheet.absoluteFillObject,
+      overflow: "hidden",
+    },
+    ambientOrb: {
+      position: "absolute",
+      top: -125,
+      right: -95,
+      width: 310,
+      height: 310,
+      borderRadius: 155,
+      borderWidth: 1,
+      borderColor: "rgba(66, 221, 235, 0.12)",
+      backgroundColor: "rgba(23, 118, 99, 0.08)",
+    },
+    circuitTrace: {
+      position: "absolute",
+      width: 200,
+      height: 1,
+      backgroundColor: "rgba(69, 242, 163, 0.12)",
+    },
+    circuitTraceOne: {
+      top: 176,
+      right: -74,
+      transform: [{ rotate: "-36deg" }],
+    },
+    circuitTraceTwo: {
+      top: 206,
+      right: -112,
+      transform: [{ rotate: "-36deg" }],
+    },
+    scrollContent: {
+      width: "100%",
+      maxWidth: 760,
+      alignSelf: "center",
+      paddingHorizontal: 16,
+      paddingTop: 16,
+      paddingBottom: 40,
+    },
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    themeToggle: {
+      width: 36,
+      height: 36,
+      borderRadius: 12,
+      borderWidth: 1,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    themeToggleText: {
+      fontSize: 19,
+      lineHeight: 23,
+      fontWeight: "700",
+    },
+    brandMark: {
+      width: 40,
+      height: 40,
+      borderRadius: 14,
+      backgroundColor: palette.greenSoft,
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+    },
+    brandMarkInner: {
+      width: 21,
+      height: 21,
+      borderRadius: 7,
+      borderWidth: 2,
+      borderColor: palette.green,
+      transform: [{ rotate: "45deg" }],
+    },
+    brandMarkCore: {
+      position: "absolute",
+      width: 6,
+      height: 6,
+      borderRadius: 2,
+      backgroundColor: palette.blue,
+      transform: [{ rotate: "45deg" }],
+    },
+    brandCopy: {
+      flex: 1,
+    },
+    brandName: {
+      color: palette.ink,
+      fontSize: 12,
+      fontWeight: "800",
+      letterSpacing: 1.4,
+    },
+    brandCaption: {
+      color: palette.muted,
+      fontSize: 11,
+      marginTop: 1,
+    },
+    privacyPill: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingHorizontal: 9,
+      paddingVertical: 7,
+      borderRadius: 99,
+      backgroundColor: palette.card,
+      borderWidth: 1,
+      borderColor: palette.line,
+    },
+    privacyDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: palette.green,
+    },
+    privacyText: {
+      color: palette.muted,
+      fontSize: 8,
+      fontWeight: "800",
+      letterSpacing: 0.7,
+    },
+    heroSection: {
+      paddingTop: 34,
+      paddingBottom: 18,
+    },
+    heroSectionWide: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+    },
+    heroCopyWide: {
+      flex: 1,
+    },
+    heroKicker: {
+      color: palette.blue,
+      fontSize: 11,
+      fontWeight: "800",
+      letterSpacing: 1.8,
+      marginBottom: 9,
+    },
+    heroTitle: {
+      color: palette.ink,
+      fontFamily: Platform.OS === "web" ? "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" : "System",
+      fontSize: 37,
+      lineHeight: 43,
+      fontWeight: "800",
+      letterSpacing: -1.2,
+    },
+    heroBody: {
+      color: palette.inkSoft,
+      fontSize: 15,
+      lineHeight: 22,
+      marginTop: 13,
+      maxWidth: 335,
+    },
+    securityVisual: {
+      height: 148,
+      width: "100%",
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 8,
+      marginBottom: 4,
+    },
+    securityVisualWide: {
+      width: 190,
+      height: 190,
+      flexShrink: 0,
+      marginTop: 0,
+      marginBottom: 0,
+    },
+    radarTrack: {
+      position: "absolute",
+      width: 142,
+      height: 142,
+      borderRadius: 71,
+      borderWidth: 1,
+      borderColor: "rgba(66, 221, 235, 0.3)",
+      backgroundColor: "rgba(19, 91, 79, 0.08)",
+    },
+    radarPulse: {
+      position: "absolute",
+      width: 126,
+      height: 126,
+      borderRadius: 63,
+      borderWidth: 1,
+      borderColor: "rgba(69, 242, 163, 0.72)",
+      backgroundColor: "rgba(69, 242, 163, 0.08)",
+    },
+    shieldAura: {
+      width: 94,
+      height: 94,
+      borderRadius: 32,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: palette.greenSoft,
+      borderWidth: 1,
+      borderColor: palette.green,
+      shadowColor: palette.green,
+      shadowOpacity: 0.38,
+      shadowRadius: 24,
+      shadowOffset: { width: 0, height: 0 },
+      elevation: 8,
+    },
+    heroShield: {
+      width: 52,
+      height: 52,
+      borderRadius: 17,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: palette.greenSoft,
+      borderWidth: 1,
+      borderColor: palette.green,
+      transform: [{ rotate: "45deg" }],
+    },
+    heroShieldCheck: {
+      color: palette.green,
+      fontSize: 30,
+      lineHeight: 34,
+      fontWeight: "800",
+      transform: [{ rotate: "-45deg" }],
+    },
+    localCheckPill: {
+      position: "absolute",
+      bottom: 0,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 7,
+      paddingHorizontal: 11,
+      paddingVertical: 7,
+      borderRadius: 99,
+      backgroundColor: palette.card,
+      borderWidth: 1,
+      borderColor: palette.line,
+    },
+    localCheckDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: palette.green,
+    },
+    localCheckText: {
+      color: palette.inkSoft,
+      fontSize: 9,
+      fontWeight: "800",
+      letterSpacing: 1,
+    },
+    scanCard: {
+      backgroundColor: palette.card,
+      borderRadius: 26,
+      padding: 20,
+      borderWidth: 1,
+      borderColor: palette.line,
+      shadowColor: palette.green,
+      shadowOpacity: 0.16,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: 10 },
+      elevation: 5,
+    },
+    scanCardTop: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+    },
+    cardEyebrow: {
+      color: palette.blue,
+      fontSize: 10,
+      fontWeight: "800",
+      letterSpacing: 1.5,
+      marginBottom: 7,
+    },
+    scanCardEyebrow: {
+      color: palette.blue,
+    },
+    scanCardTitle: {
+      color: palette.ink,
+      fontSize: 26,
+      lineHeight: 31,
+      fontWeight: "700",
+    },
+    shieldIcon: {
+      width: 45,
+      height: 45,
+      borderRadius: 15,
+      backgroundColor: palette.greenSoft,
+      borderWidth: 1,
+      borderColor: palette.green,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    shieldIconText: {
+      color: palette.green,
+      fontSize: 28,
+      lineHeight: 28,
+      transform: [{ rotate: "180deg" }],
+    },
+    scanCardBody: {
+      color: palette.inkSoft,
+      fontSize: 14,
+      lineHeight: 21,
+      marginTop: 15,
+      marginBottom: 20,
+    },
+    primaryButton: {
+      minHeight: 54,
+      borderRadius: 15,
+      backgroundColor: palette.green,
+      shadowColor: palette.green,
+      shadowOpacity: 0.48,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: 0 },
+      elevation: 8,
+      paddingHorizontal: 17,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    primaryButtonPressed: {
+      opacity: 0.9,
+      transform: [{ scale: 0.98 }],
+    },
+    disabledButton: {
+      backgroundColor: palette.line,
+    },
+    disabledButtonText: {
+      color: palette.muted,
+    },
+    primaryButtonText: {
+      color: palette.buttonText,
+      fontSize: 15,
+      fontWeight: "700",
+    },
+    primaryButtonArrow: {
+      color: palette.buttonText,
+      fontSize: 24,
+      lineHeight: 25,
+    },
+    demoButton: {
+      alignSelf: "center",
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      marginTop: 18,
+      padding: 4,
+    },
+    demoButtonText: {
+      color: palette.inkSoft,
+      fontSize: 13,
+      fontWeight: "600",
+    },
+    demoButtonArrow: {
+      color: palette.blue,
+      fontSize: 16,
+    },
+    uploadButton: {
+      alignSelf: "center",
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 7,
+      marginTop: 12,
+      paddingVertical: 6,
+    },
+    uploadButtonIcon: {
+      color: palette.blue,
+      fontSize: 16,
+      fontWeight: "800",
+    },
+    uploadButtonText: {
+      color: palette.blue,
+      fontSize: 12,
+      fontWeight: "700",
+    },
+    uploadPreview: {
+      alignSelf: "center",
+      width: 52,
+      height: 52,
+      borderRadius: 12,
+      marginTop: 5,
+      borderWidth: 1,
+      borderColor: palette.line,
+    },
+    sampleRow: {
+      flexDirection: "row",
+      justifyContent: "center",
+      gap: 8,
+      marginTop: 12,
+    },
+    sampleChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      paddingHorizontal: 9,
+      paddingVertical: 6,
+      borderRadius: 99,
+      backgroundColor: palette.card,
+      borderWidth: 1,
+      borderColor: palette.line,
+    },
+    sampleDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+    },
+    sampleChipText: {
+      color: palette.inkSoft,
+      fontSize: 10,
+      fontWeight: "700",
+    },
+    resultCard: {
+      backgroundColor: palette.card,
+      borderRadius: 26,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: palette.line,
+      shadowColor: "#000000",
+      shadowOpacity: 0.35,
+      shadowRadius: 16,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: 3,
+    },
+    statusHero: {
+      flexDirection: "row",
+      alignItems: "center",
+      borderRadius: 20,
+      padding: 14,
+      marginBottom: 16,
+      borderWidth: 1,
+      shadowColor: palette.green,
+      shadowOpacity: 0.14,
+      shadowRadius: 14,
+      shadowOffset: { width: 0, height: 0 },
+      elevation: 3,
+    },
+    statusHeroIcon: {
+      width: 42,
+      height: 42,
+      borderRadius: 14,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1,
+      shadowColor: palette.green,
+      shadowOpacity: 0.32,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 0 },
+      elevation: 4,
+    },
+    statusHeroIconText: {
+      color: "#062016",
+      fontSize: 22,
+      fontWeight: "900",
+    },
+    statusHeroCopy: {
+      flex: 1,
+      marginLeft: 12,
+    },
+    statusHeroLabel: {
+      fontSize: 9,
+      fontWeight: "900",
+      letterSpacing: 1.2,
+    },
+    statusHeroTitle: {
+      fontSize: 24,
+      lineHeight: 28,
+      fontWeight: "900",
+      marginTop: 2,
+    },
+    statusHeroArrow: {
+      fontSize: 24,
+      fontWeight: "800",
+    },
+    historySection: {
+      marginTop: 22,
+    },
+    historyHeader: {
+      flexDirection: "row",
+      alignItems: "flex-end",
+      justifyContent: "space-between",
+      marginBottom: 9,
+    },
+    historyEyebrow: {
+      color: palette.blue,
+      fontSize: 9,
+      fontWeight: "900",
+      letterSpacing: 1.2,
+    },
+    historyTitle: {
+      color: palette.ink,
+      fontSize: 20,
+      fontWeight: "800",
+      marginTop: 3,
+    },
+    historyCount: {
+      color: palette.muted,
+      fontSize: 11,
+      fontWeight: "700",
+    },
+    historyRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      backgroundColor: palette.card,
+      borderWidth: 1,
+      borderColor: palette.line,
+      borderRadius: 15,
+      padding: 11,
+      marginBottom: 7,
+    },
+    historyStatus: {
+      width: 30,
+      height: 30,
+      borderRadius: 10,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    historyStatusText: {
+      fontSize: 15,
+      fontWeight: "900",
+    },
+    historyCopy: {
+      flex: 1,
+    },
+    historyHeadline: {
+      color: palette.ink,
+      fontSize: 12,
+      fontWeight: "800",
+    },
+    historySubline: {
+      color: palette.muted,
+      fontSize: 10,
+      marginTop: 3,
+    },
+    historyRisk: {
+      fontSize: 10,
+      fontWeight: "800",
+    },
+    resultHeader: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: 12,
+    },
+    resultTitle: {
+      color: palette.ink,
+      fontSize: 24,
+      lineHeight: 29,
+      fontWeight: "800",
+      maxWidth: 190,
+    },
+    riskBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      borderRadius: 99,
+      paddingHorizontal: 9,
+      paddingVertical: 7,
+    },
+    riskIcon: {
+      width: 16,
+      height: 16,
+      borderRadius: 8,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    riskIconText: {
+      color: "#06100F",
+      fontSize: 10,
+      fontWeight: "800",
+    },
+    riskBadgeText: {
+      fontSize: 11,
+      fontWeight: "800",
+    },
+    recipientBlock: {
+      backgroundColor: palette.card,
+      borderRadius: 17,
+      padding: 15,
+      marginTop: 20,
+      borderWidth: 1,
+      borderColor: palette.line,
+    },
+    recipientLabel: {
+      color: palette.muted,
+      fontSize: 9,
+      fontWeight: "800",
+      letterSpacing: 1.2,
+    },
+    recipientName: {
+      color: palette.ink,
+      fontSize: 18,
+      fontWeight: "700",
+      marginTop: 6,
+    },
+    recipientAmount: {
+      color: palette.blue,
+      fontSize: 20,
+      fontWeight: "800",
+      marginTop: 6,
+    },
+    detailList: {
+      marginTop: 14,
+    },
+    detailRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: 12,
+      paddingVertical: 9,
+      borderBottomWidth: 1,
+      borderBottomColor: palette.line,
+    },
+    detailLabel: {
+      color: palette.muted,
+      fontSize: 10,
+      fontWeight: "800",
+      letterSpacing: 0.9,
+      paddingTop: 2,
+    },
+    detailValue: {
+      color: palette.ink,
+      flex: 1,
+      textAlign: "right",
+      fontSize: 13,
+      lineHeight: 18,
+      fontWeight: "600",
+    },
+    monoValue: {
+      fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+      fontSize: 12,
+    },
+    explanationBox: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 9,
+      backgroundColor: palette.card,
+      borderRadius: 14,
+      padding: 12,
+      marginTop: 15,
+      borderWidth: 1,
+      borderColor: palette.line,
+    },
+    explanationMark: {
+      width: 19,
+      height: 19,
+      borderRadius: 10,
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 1,
+    },
+    explanationMarkText: {
+      color: "#FFFFFF",
+      fontSize: 11,
+      fontWeight: "800",
+    },
+    explanationText: {
+      color: palette.inkSoft,
+      flex: 1,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: "500",
+    },
+    handoffWarning: {
+      backgroundColor: palette.amberSoft,
+      borderRadius: 14,
+      padding: 12,
+      marginTop: 12,
+      borderWidth: 1,
+      borderColor: palette.amber,
+    },
+    handoffWarningTitle: {
+      color: palette.amber,
+      fontSize: 11,
+      fontWeight: "800",
+      letterSpacing: 0.4,
+    },
+    handoffWarningText: {
+      color: palette.inkSoft,
+      fontSize: 12,
+      lineHeight: 18,
+      marginTop: 4,
+    },
+    signalList: {
+      paddingTop: 12,
+      gap: 7,
+    },
+    signalRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 8,
+    },
+    signalBullet: {
+      width: 5,
+      height: 5,
+      borderRadius: 3,
+      backgroundColor: palette.amber,
+      marginTop: 6,
+    },
+    signalText: {
+      color: palette.muted,
+      flex: 1,
+      fontSize: 12,
+      lineHeight: 17,
+    },
+    resultActions: {
+      flexDirection: "row",
+      gap: 10,
+      marginTop: 10,
+    },
+    secondaryButton: {
+      flex: 1,
+      minHeight: 45,
+      borderRadius: 13,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: palette.card,
+      borderWidth: 1,
+      borderColor: palette.line,
+    },
+    secondaryButtonText: {
+      color: palette.ink,
+      fontSize: 12,
+      fontWeight: "700",
+    },
+    promiseRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginTop: 25,
+      paddingVertical: 17,
+      borderTopWidth: 1,
+      borderBottomWidth: 1,
+      borderColor: palette.line,
+    },
+    promiseItem: {
+      flex: 1,
+      gap: 5,
+    },
+    promiseNumber: {
+      color: palette.blue,
+      fontSize: 10,
+      fontWeight: "800",
+      letterSpacing: 1,
+    },
+    promiseText: {
+      color: palette.inkSoft,
+      fontSize: 11,
+      fontWeight: "700",
+    },
+    promiseDivider: {
+      width: 1,
+      height: 28,
+      backgroundColor: palette.line,
+      marginHorizontal: 7,
+    },
+    disclaimerBox: {
+      paddingTop: 20,
+    },
+    disclaimerTitle: {
+      color: palette.inkSoft,
+      fontSize: 13,
+      fontWeight: "700",
+    },
+    disclaimerText: {
+      color: palette.muted,
+      fontSize: 12,
+      lineHeight: 18,
+      marginTop: 6,
+    },
+    pressed: {
+      opacity: 0.68,
+    },
+    scannerScreen: {
+      flex: 1,
+      backgroundColor: palette.paper,
+    },
+    scannerOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: "rgba(4, 16, 14, 0.62)",
+      paddingHorizontal: 16,
+      paddingTop: 16,
+      paddingBottom: 30,
+      justifyContent: "space-between",
+    },
+    scannerTopBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    closeButton: {
+      width: 42,
+      height: 42,
+      borderRadius: 14,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "rgba(5, 24, 20, 0.82)",
+      borderWidth: 1,
+      borderColor: "rgba(69, 242, 163, 0.45)",
+    },
+    closeButtonText: {
+      color: "#FFFFFF",
+      fontSize: 28,
+      fontWeight: "300",
+      lineHeight: 28,
+    },
+    scannerTopCopy: {
+      alignItems: "center",
+    },
+    scannerEyebrow: {
+      color: palette.blue,
+      fontSize: 10,
+      fontWeight: "800",
+      letterSpacing: 1.6,
+    },
+    scannerTitle: {
+      color: "#FFFFFF",
+      fontSize: 17,
+      fontWeight: "700",
+      marginTop: 4,
+    },
+    topBarSpacer: {
+      width: 42,
+    },
+    scanWindow: {
+      alignSelf: "center",
+      width: "88%",
+      maxWidth: 380,
+      aspectRatio: 1,
+      borderRadius: 28,
+      borderWidth: 1,
+      borderColor: "rgba(66, 221, 235, 0.5)",
+      backgroundColor: "rgba(7, 25, 22, 0.18)",
+      position: "relative",
+    },
+    corner: {
+      position: "absolute",
+      width: 38,
+      height: 38,
+      borderColor: palette.green,
+    },
+    cornerTopLeft: {
+      top: 0,
+      left: 0,
+      borderTopWidth: 4,
+      borderLeftWidth: 4,
+      borderTopLeftRadius: 15,
+    },
+    cornerTopRight: {
+      top: 0,
+      right: 0,
+      borderTopWidth: 4,
+      borderRightWidth: 4,
+      borderTopRightRadius: 15,
+    },
+    cornerBottomLeft: {
+      bottom: 0,
+      left: 0,
+      borderBottomWidth: 4,
+      borderLeftWidth: 4,
+      borderBottomLeftRadius: 15,
+    },
+    cornerBottomRight: {
+      bottom: 0,
+      right: 0,
+      borderBottomWidth: 4,
+      borderRightWidth: 4,
+      borderBottomRightRadius: 15,
+    },
+    scannerBottomCopy: {
+      alignItems: "center",
+    },
+    scanHintPill: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderRadius: 99,
+      backgroundColor: "rgba(5, 24, 20, 0.88)",
+      borderWidth: 1,
+      borderColor: "rgba(69, 242, 163, 0.35)",
+    },
+    liveDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: palette.green,
+    },
+    scanHintText: {
+      color: "#FFFFFF",
+      fontSize: 13,
+      fontWeight: "700",
+    },
+    scanHintSecondary: {
+      color: "#D0E4DC",
+      fontSize: 12,
+      marginTop: 10,
+    },
+  });
+}
+
+type HomeStyles = ReturnType<typeof createStyles>;
